@@ -6,6 +6,9 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   publicDir: 'static',
+  resolve: {
+    conditions: ['browser'],
+  },
   plugins: [
     svelte(),
     VitePWA({

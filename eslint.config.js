@@ -25,5 +25,8 @@ export default tseslint.config(
         parser: tseslint.parser,
       },
     },
+    rules: {
+      'no-undef': 'off',
+    },
   },
 );
