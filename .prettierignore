@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+.agents/
+.specify/
+docs/
+specs/
+static/fonts/*.woff
+static/fonts/*.woff2

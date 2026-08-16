@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title>Photo Marker</title>
+  <rect width="128" height="128" rx="28" fill="#172554"/>
+  <path d="M24 42a10 10 0 0 1 10-10h16l8-10h12l8 10h14a10 10 0 0 1 10 10v48a10 10 0 0 1-10 10H34a10 10 0 0 1-10-10z" fill="#93c5fd"/>
+  <circle cx="64" cy="65" r="20" fill="#172554"/>
+  <circle cx="64" cy="65" r="10" fill="#f8fafc"/>
+  <path d="m89 27 4 8 8 4-8 4-4 8-4-8-8-4 8-4z" fill="#fbbf24"/>
+</svg>

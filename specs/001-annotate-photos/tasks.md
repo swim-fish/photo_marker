@@ -23,12 +23,12 @@ an independently reviewable increment. All file paths are repository-relative.
 
 **Purpose**: Bootstrap one client-only Svelte/TypeScript PWA and its test/quality toolchain.
 
-- [ ] T001 Create the Svelte 5 and TypeScript application skeleton, dependency scripts (including locally bundled, lazy-loadable `leaflet@1.9.4`), entry point, and English localization catalog in `package.json`, `index.html`, `src/main.ts`, `src/App.svelte`, `src/app.css`, `src/i18n/index.ts`, and `src/i18n/en.ts`
-- [ ] T002 Configure Vite, TypeScript, Svelte, Vitest, and browser test environments in `vite.config.ts`, `tsconfig.json`, `svelte.config.js`, and `tests/setup.ts`
-- [ ] T003 [P] Configure ESLint and Prettier with zero-warning CI scripts in `eslint.config.js`, `.prettierrc`, and `.prettierignore`
-- [ ] T004 [P] Configure Playwright projects for supported mobile and desktop fixtures in `playwright.config.ts` and `tests/e2e/fixtures.ts`
-- [ ] T005 [P] Add self-hosted application icons and an approved Taiwan Traditional Chinese-capable font with license records in `static/icons/`, `static/fonts/`, and `THIRD_PARTY_NOTICES.md`
-- [ ] T006 Create deterministic, non-sensitive JPEG/PNG/orientation fixtures and fixture helpers in `tests/integration/fixtures/` and `tests/helpers/photoFixtures.ts`
+- [x] T001 Create the Svelte 5 and TypeScript application skeleton, dependency scripts (including locally bundled, lazy-loadable `leaflet@1.9.4`), entry point, and English localization catalog in `package.json`, `index.html`, `src/main.ts`, `src/App.svelte`, `src/app.css`, `src/i18n/index.ts`, and `src/i18n/en.ts`
+- [x] T002 Configure Vite, TypeScript, Svelte, Vitest, and browser test environments in `vite.config.ts`, `tsconfig.json`, `svelte.config.js`, and `tests/setup.ts`
+- [x] T003 [P] Configure ESLint and Prettier with zero-warning CI scripts in `eslint.config.js`, `.prettierrc`, and `.prettierignore`
+- [x] T004 [P] Configure Playwright projects for supported mobile and desktop fixtures in `playwright.config.ts` and `tests/e2e/fixtures.ts`
+- [x] T005 [P] Add self-hosted application icons and an approved Taiwan Traditional Chinese-capable font with license records in `static/icons/`, `static/fonts/`, and `THIRD_PARTY_NOTICES.md`
+- [x] T006 Create deterministic, non-sensitive JPEG/PNG/orientation fixtures and fixture helpers in `tests/integration/fixtures/` and `tests/helpers/photoFixtures.ts`
 
 **Checkpoint**: The empty application builds, all quality commands resolve, and the test runners can
 execute an intentionally empty suite.
