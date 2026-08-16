@@ -1,0 +1,282 @@
+# Feature Specification: Offline Photo Annotation
+
+**Feature Branch**: `N/A (no before_specify hook configured)`
+
+**Created**: 2026-08-16
+
+**Status**: Draft
+
+**Input**: User description: "Create an offline installable Photo Marker application for mobile and
+desktop. Users import or share photos, use embedded GPS or manual coordinates, add a title and other
+configurable text boxes, preview the result, and save a new annotated image without changing the
+original. Coordinate conversion behavior should be consistent with the pwa_map reference project."
+
+## User Scenarios & Testing *(mandatory)*
+
+### User Story 1 - Annotate and Export One Photo (Priority: P1)
+
+A user imports a photo, confirms its embedded capture coordinate or enters a coordinate manually,
+adds a title and other text boxes, positions and styles those overlays, previews the result, and
+saves an annotated copy while retaining the original photo unchanged.
+
+**Why this priority**: This is the smallest complete workflow that delivers the product's primary
+value: turning an existing photo into a clearly identified, location-marked output.
+
+**Independent Test**: Import one supported photo, add one coordinate overlay and one custom text
+overlay, export the result, and verify that the output matches the preview and the source file is
+unchanged.
+
+**Acceptance Scenarios**:
+
+1. **Given** a supported photo containing valid embedded GPS data, **When** the user imports it,
+   **Then** the application presents that coordinate as the default candidate and identifies its
+   source as capture metadata.
+2. **Given** a photo without valid embedded GPS data, **When** the user imports it, **Then** the
+   application reports that no capture coordinate is available and offers manual coordinate entry
+   without inserting the device's current location.
+3. **Given** a valid coordinate and one or more configured text boxes, **When** the user previews the
+   photo, **Then** every visible overlay reflects the selected content, size, position, text color,
+   and background color.
+4. **Given** a completed preview, **When** the user exports the photo, **Then** a separate annotated
+   image is saved and the original photo remains byte-for-byte unchanged.
+5. **Given** the user cancels before confirming export, **When** the editing session closes, **Then**
+   no output is created and the original remains unchanged.
+
+---
+
+### User Story 2 - Select Trustworthy Coordinate Formats (Priority: P2)
+
+A user chooses how the selected location is shown on the photo. The application can present common
+global and Taiwan-specific coordinate formats while retaining whether the underlying location came
+from photo metadata or manual entry.
+
+**Why this priority**: Field photos are useful only when their displayed location is understandable,
+accurate, and not confused with the location where the photo was processed.
+
+**Independent Test**: Use approved reference coordinates to select each supported display format,
+compare the displayed value with its reference vector, and verify that the coordinate source remains
+visible throughout editing and export.
+
+**Acceptance Scenarios**:
+
+1. **Given** a valid WGS84 coordinate, **When** the user selects WGS84 decimal degrees, WGS84
+   degrees-minutes-seconds, TWD97 TM2, TWD67 TM2, MGRS, or Taipower format, **Then** the application
+   displays the corresponding converted value with the selected precision and required zone label.
+2. **Given** a TWD97 coordinate whose zone is not explicitly supplied, **When** the application can
+   resolve zone 119 or 121, **Then** it identifies the selected zone instead of silently hiding the
+   decision.
+3. **Given** a location outside a supported Taipower or Taiwan-specific coverage area, **When** the
+   user selects that format, **Then** the application reports that the format is unavailable for the
+   location and preserves the valid underlying WGS84 coordinate.
+4. **Given** a manually entered coordinate, **When** the user exports the photo, **Then** the visible
+   coordinate is identified as manual and is not represented as the photo's original capture GPS.
+
+---
+
+### User Story 3 - Work Offline on Mobile and Desktop (Priority: P2)
+
+A user installs or opens the application on a supported phone or computer and completes the core
+photo-marking workflow without a network connection after offline readiness has been established.
+The same task remains understandable with touch, mouse, or keyboard input.
+
+**Why this priority**: The intended field workflow may occur where connectivity is unavailable, and
+users need consistent access from both mobile and desktop devices.
+
+**Independent Test**: Establish offline readiness on one supported mobile environment and one
+supported desktop environment, disconnect the network, then import, annotate, preview, and export a
+photo successfully on each environment.
+
+**Acceptance Scenarios**:
+
+1. **Given** the application has confirmed offline readiness, **When** network access is removed,
+   **Then** photo import, coordinate selection, annotation, preview, and export continue to work.
+2. **Given** the application has not yet established offline readiness, **When** the user attempts to
+   work offline, **Then** the application explains the limitation without losing selected photos or
+   claiming that offline use is ready.
+3. **Given** a narrow touch screen or a desktop window, **When** the user performs the primary
+   workflow, **Then** required controls remain visible, operable, and free from blocking overlap.
+4. **Given** a supported platform that cannot receive photos from its system share surface, **When**
+   the user opens the application, **Then** the user can import the same photos through the in-app
+   selection flow.
+
+---
+
+### User Story 4 - Annotate Multiple Photos Efficiently (Priority: P3)
+
+A user selects multiple photos, applies common title, team, coordinate-format, and text-style
+settings, reviews per-photo coordinates, and exports a separate annotated copy for every successful
+item.
+
+**Why this priority**: Batch processing reduces repetitive field-work effort but builds on the
+single-photo workflow and can be delivered after that workflow is reliable.
+
+**Independent Test**: Import a mixed batch containing photos with GPS, photos without GPS, and one
+invalid file; configure shared overlays, resolve each photo requiring manual input, export the batch,
+and verify an explicit result for every item.
+
+**Acceptance Scenarios**:
+
+1. **Given** multiple valid photos, **When** the user applies common overlay settings, **Then** those
+   settings are applied consistently while each photo retains its own coordinate record.
+2. **Given** some photos lack GPS, **When** the user reviews the batch, **Then** each affected photo is
+   clearly identified and may receive its own manual coordinate before export.
+3. **Given** one item fails to decode or export, **When** batch processing finishes, **Then** other
+   valid items remain available and the result identifies each success and failure without modifying
+   any original.
+4. **Given** an unresolved photo in the batch, **When** the user starts export, **Then** the application
+   requires the user to resolve, explicitly omit, or export that item without a coordinate rather
+   than silently assigning a location.
+
+### Edge Cases
+
+- A photo contains missing, malformed, out-of-range, or zero-valued GPS metadata.
+- A photo's orientation metadata differs from its stored pixel orientation.
+- A manual coordinate is incomplete, outside valid latitude or longitude bounds, ambiguous between
+  TM2 zones, or incompatible with the selected coordinate format.
+- A Taipower coordinate falls in an unsupported letter cell or outer-island coverage area.
+- A photo is corrupt, password-protected, empty, too large for the supported limit, or uses an
+  unsupported format.
+- User text is empty, contains long unbroken content, multiple lines, emoji, or Taiwan Traditional
+  Chinese characters.
+- A text box is moved partly outside the image, overlaps another box, or becomes unreadable against
+  the selected background.
+- The user rotates the device or resizes the desktop window while editing.
+- The output name already exists, storage permission is denied, available storage is insufficient,
+  or the save operation is canceled.
+- Connectivity disappears before offline readiness is established or while no remote transmission
+  should be occurring.
+- A batch contains duplicate photos, mixed dimensions and orientations, or a partial export failure.
+
+## Requirements *(mandatory)*
+
+### Functional Requirements
+
+- **FR-001**: The product MUST provide an installable application experience on at least one
+  supported mobile environment and one supported desktop environment.
+- **FR-002**: The supported browser and operating-system matrix, supported photo formats, maximum
+  source dimensions, and batch-size limit MUST be documented before implementation planning is
+  approved.
+- **FR-003**: After offline readiness is confirmed, the application MUST perform photo import,
+  coordinate handling, annotation, preview, and export without network access.
+- **FR-004**: The application MUST process photo pixels, metadata, coordinates, and annotation
+  content locally by default and MUST NOT transmit them over a network as part of the core workflow.
+- **FR-005**: Users MUST be able to select one or more supported photos from within the application.
+- **FR-006**: On supported platforms that expose an installed-app share flow, users MUST be able to
+  send one or more photos into the same import workflow; in-app selection MUST remain available as a
+  fallback.
+- **FR-007**: The application MUST preserve each source photo without modification and MUST create a
+  separate output for every completed export.
+- **FR-008**: The application MUST interpret photo orientation consistently so preview and export do
+  not unexpectedly rotate or mirror the image.
+- **FR-009**: The application MUST read valid embedded capture GPS when present and MUST distinguish
+  it from manually entered coordinates.
+- **FR-010**: Users MUST be able to enter or replace a photo's working coordinate manually using a
+  validated coordinate input.
+- **FR-011**: The application MUST NOT automatically substitute the processing device's current
+  location when capture GPS is missing or invalid.
+- **FR-012**: The application MUST retain coordinate provenance throughout the editing session and
+  MUST label visible or exported coordinates as capture metadata or manual input as applicable.
+- **FR-013**: The application MUST support display of WGS84 decimal degrees, WGS84
+  degrees-minutes-seconds, TWD97 TM2 zones 119 and 121, TWD67 TM2 zone 121, MGRS precision levels 1
+  through 5, and supported mainland Taipower formats.
+- **FR-014**: Coordinate conversions MUST match the approved reference vectors within each vector's
+  declared tolerance and MUST return an explicit unavailable or out-of-coverage result instead of a
+  fabricated coordinate.
+- **FR-015**: When the application resolves an ambiguous TM2 zone, it MUST display the resolved zone
+  to the user before export.
+- **FR-016**: Users MUST be able to add one or more text overlays, including a title, a team label, a
+  coordinate label, and free-form text.
+- **FR-017**: For each text overlay, users MUST be able to edit its content, position, size, text
+  color, and background color, and MUST be able to remove the overlay.
+- **FR-018**: The application MUST keep required overlay controls usable with touch, mouse, and
+  keyboard input on supported mobile and desktop viewport sizes.
+- **FR-019**: The application MUST provide a preview that represents the exported image's crop,
+  orientation, overlay content, relative position, color, and size.
+- **FR-020**: Before export, users MUST be able to choose whether source metadata is preserved or
+  removed from the new image; changing the visible coordinate MUST NOT silently rewrite capture GPS
+  metadata.
+- **FR-021**: Export MUST use a conflict-safe output name or obtain explicit confirmation before
+  replacing an existing output file.
+- **FR-022**: Batch editing MUST allow shared overlay settings while retaining independently
+  reviewable coordinate provenance and validation status for each photo.
+- **FR-023**: A partial batch failure MUST NOT discard successful outputs or prevent the user from
+  identifying and retrying failed items.
+- **FR-024**: The application MUST define and present distinct loading, empty, invalid-coordinate,
+  unsupported-format, offline-not-ready, export-failure, disabled, and success states.
+- **FR-025**: The primary workflow MUST remain operable without color-only cues and MUST provide
+  accessible names, focus order, and visible focus state for interactive controls.
+- **FR-026**: User-entered annotation text MUST preserve Unicode content in preview and export.
+- **FR-027**: Closing or canceling an unfinished session MUST NOT modify source photos or create an
+  output without explicit export confirmation.
+
+### Key Entities
+
+- **Source Photo**: An immutable user-selected photo, including its file identity, pixel dimensions,
+  orientation, supported-format status, and optional source metadata.
+- **Editing Session**: The temporary working state for one or more source photos, selected settings,
+  review status, and unsaved changes.
+- **Coordinate Record**: The working WGS84 location, its provenance, validity, selected display
+  format, precision, applicable zone, and coverage status.
+- **Text Overlay**: User-visible annotation content with a semantic role, relative position, size,
+  text color, background color, ordering, and removal state.
+- **Export Configuration**: Output naming and format choices plus the user's metadata-retention
+  choice.
+- **Export Result**: The per-photo success, omission, cancellation, or failure outcome and any saved
+  output identity.
+
+### Scope Boundaries
+
+- The feature includes photo selection, supported platform share intake, GPS extraction, manual
+  coordinate entry, coordinate formatting, text annotation, preview, local export, and batch status.
+- The feature does not include map browsing, map tiles, route planning, cloud upload, account sync,
+  collaborative editing, video annotation, general-purpose photo filters, or destructive editing.
+- Capturing the processing device's current location is excluded from the initial scope to prevent
+  accidental attribution of processing location as capture location.
+- Platform-specific native sharing behavior is required only where the supported environment makes
+  it available; the in-app import flow is the universal fallback.
+
+## Success Criteria *(mandatory)*
+
+### Measurable Outcomes
+
+- **SC-001**: At least 90% of first-time test participants can import, annotate, preview, and export
+  one photo without assistance in under three minutes on both a supported mobile environment and a
+  supported desktop environment.
+- **SC-002**: After offline readiness is confirmed, 100% of the primary workflow acceptance tests
+  pass with network access disabled.
+- **SC-003**: For every approved coordinate reference vector, each supported conversion matches the
+  vector's declared tolerance and an unsupported coverage case never produces a plausible-looking
+  coordinate.
+- **SC-004**: In all export and cancellation tests, the source photo remains byte-for-byte unchanged.
+- **SC-005**: For supported 12-megapixel JPEG photos on representative supported mobile and desktop
+  devices, the first usable preview appears within three seconds and a single confirmed export
+  completes within fifteen seconds in at least 95% of focused test runs.
+- **SC-006**: Preview-to-export comparison confirms that overlay content, order, color, and relative
+  placement remain visually equivalent for 100% of approved layout fixtures.
+- **SC-007**: In a batch containing 20 supported photos and one invalid item, every valid item can be
+  reviewed and exported, and the invalid item receives an explicit failure result without data loss.
+- **SC-008**: All primary workflow controls can be completed using touch and using keyboard-only
+  input, with no blocking overlap at the minimum supported mobile and desktop viewport sizes.
+- **SC-009**: No photo, coordinate, metadata, or annotation content is transmitted during the core
+  workflow in offline and connected verification scenarios.
+
+## Assumptions
+
+- The first release targets personal or field-work use without accounts, cloud storage, or server
+  processing.
+- JPEG and PNG are the minimum required input formats. Additional formats may be added only when the
+  supported-platform matrix can decode and export them consistently.
+- Source metadata is preserved by default in the exported copy unless the user chooses removal;
+  manual visible coordinates do not alter capture GPS metadata.
+- WGS84 is the canonical working location. Other displayed coordinate formats are derived from that
+  location.
+- Coordinate format definitions, tolerances, test vectors, and known limitations are based on the
+  MIT-licensed pwa_map reference project's approved coordinate artifacts. Reuse must retain required
+  licence and attribution notices.
+- TWD67 support is limited to TM2 zone 121. Taipower support is limited to its verified mainland
+  coverage; unsupported outer-island regions return an explicit out-of-coverage result.
+- Common overlay settings may be applied across a batch, but users remain responsible for reviewing
+  each photo whose coordinate is missing, invalid, or manually supplied.
+- The supported-platform matrix and representative verification devices will be selected during
+  planning. Performance verification will use the focused scenarios in SC-005 and SC-007 rather
+  than an exhaustive long-running benchmark suite.
