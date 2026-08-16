@@ -44,17 +44,17 @@ all user stories.
 
 ### Foundational tests
 
-- [ ] T007 [P] Write and run failing tests for typed non-sensitive errors and photo/session validation limits in `tests/unit/domain/result.spec.ts` and `tests/unit/photos/photoLimits.spec.ts`
-- [ ] T008 [P] Write and run failing tests for normalized overlay clamping, ordering, and oriented-image geometry in `tests/unit/overlays/geometry.spec.ts` and `tests/unit/renderer/layout.spec.ts`
-- [ ] T009 [P] Write and run failing reducer tests for editing-session revisions, active-photo selection, and legal state transitions in `tests/unit/drafts/editingSession.spec.ts`
+- [x] T007 [P] Write and run failing tests for typed non-sensitive errors and photo/session validation limits in `tests/unit/domain/result.spec.ts` and `tests/unit/photos/photoLimits.spec.ts`
+- [x] T008 [P] Write and run failing tests for normalized overlay clamping, ordering, and oriented-image geometry in `tests/unit/overlays/geometry.spec.ts` and `tests/unit/renderer/layout.spec.ts`
+- [x] T009 [P] Write and run failing reducer tests for editing-session revisions, active-photo selection, and legal state transitions in `tests/unit/drafts/editingSession.spec.ts`
 
 ### Foundational implementation
 
-- [ ] T010 Implement typed success/failure results and sanitized diagnostic codes in `src/domain/result.ts` and `src/infrastructure/platform/diagnostics.ts`
-- [ ] T011 [P] Implement SourcePhoto, CoordinateRecord, TextOverlay, ExportConfiguration, ExportResult, EditingSession, MapNetworkConsent, and ephemeral MapPreviewState types in `src/domain/photos/types.ts`, `src/domain/coordinates/types.ts`, `src/domain/overlays/types.ts`, `src/domain/export/types.ts`, `src/domain/drafts/types.ts`, and `src/domain/map/types.ts`
-- [ ] T012 Implement JPEG/PNG count, byte, dimension, pixel-area, and aggregate-storage limit validation in `src/domain/photos/photoLimits.ts`
-- [ ] T013 Implement display-oriented normalized geometry, bounds clamping, ordering, and shared layout primitives in `src/domain/overlays/geometry.ts` and `src/renderer/layout.ts`
-- [ ] T014 Implement the canonical editing-session reducer and selectors, making T007–T009 green, in `src/domain/drafts/editingSession.ts` and `src/domain/drafts/selectors.ts`
+- [x] T010 Implement typed success/failure results and sanitized diagnostic codes in `src/domain/result.ts` and `src/infrastructure/platform/diagnostics.ts`
+- [x] T011 [P] Implement SourcePhoto, CoordinateRecord, TextOverlay, ExportConfiguration, ExportResult, EditingSession, MapNetworkConsent, and ephemeral MapPreviewState types in `src/domain/photos/types.ts`, `src/domain/coordinates/types.ts`, `src/domain/overlays/types.ts`, `src/domain/export/types.ts`, `src/domain/drafts/types.ts`, and `src/domain/map/types.ts`
+- [x] T012 Implement JPEG/PNG count, byte, dimension, pixel-area, and aggregate-storage limit validation in `src/domain/photos/photoLimits.ts`
+- [x] T013 Implement display-oriented normalized geometry, bounds clamping, ordering, and shared layout primitives in `src/domain/overlays/geometry.ts` and `src/renderer/layout.ts`
+- [x] T014 Implement the canonical editing-session reducer and selectors, making T007–T009 green, in `src/domain/drafts/editingSession.ts` and `src/domain/drafts/selectors.ts`
 
 **Checkpoint**: Shared entities and pure domain behavior pass focused tests without browser or Svelte
 dependencies.
