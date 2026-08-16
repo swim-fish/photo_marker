@@ -20,6 +20,8 @@ SourcePhoto    1 ── 0..1 CoordinateRecord
 SourcePhoto    1 ── 0..* TextOverlay
 SourcePhoto    1 ── 1 ExportConfiguration
 SourcePhoto    1 ── 0..1 ExportResult
+ApplicationOrigin 1 ── 0..1 MapNetworkConsent
+EditingSession 0 ── 0..1 MapPreviewState
 ```
 
 Shared batch settings are templates copied into each photo's independently reviewable state. They
@@ -134,15 +136,18 @@ Default movement is 1% and accelerated movement is 5%; every path clamps to imag
 |-------|------|-------|
 | `photoId` | UUID | One per editable photo |
 | `format` | enum | `image/jpeg` or `image/png` |
-| `width`, `height` | integer | Defaults to display-equivalent source pixel dimensions; changes retain aspect ratio unless a future specification says otherwise |
+| `width`, `height` | integer | Same-format preservation defaults to `rawWidth`/`rawHeight`; normalized output defaults to `displayWidth`/`displayHeight`; user changes retain the applicable aspect ratio |
 | `quality` | number or null | JPEG `(0,1]`, default `0.92`; null for PNG |
 | `metadataMode` | enum | `preserveSupported` default or `removeSupported` |
+| `orientationMode` | enum | `preserveRaw` only for same-format metadata preservation; otherwise `bakeUpright` |
 | `fallback` | object or null | Required format/metadata/save fallback and user acknowledgement |
 | `outputName` | string | Conflict-safe; never equals an instruction to overwrite the source |
 | `saveMethod` | enum | `filePicker`, `download`, `webShare` selected by capability and user action |
 
 Format changes set `metadataMode=preserveSupported` to a blocked review state until unsupported
-metadata loss is disclosed and acknowledged or the user selects removal.
+metadata loss and upright-pixel normalization are disclosed and acknowledged or the user selects
+removal. `preserveRaw` inverse-maps display-oriented overlay geometry onto the raw canvas and retains
+the source orientation; `bakeUpright` writes upright pixels and sets or omits orientation as 1.
 
 ## ExportResult
 
@@ -159,3 +164,33 @@ metadata loss is disclosed and acknowledged or the user selects removal.
 
 `handedOff` means the app handed the Blob to the browser/OS; it does not claim a browser download was
 written to a particular path. A partial failure retains all results and draft data needed for retry.
+
+## MapNetworkConsent
+
+This preference is origin-local application state and MUST NOT be stored inside a photo or draft.
+
+| Field | Type | Rules |
+|-------|------|-------|
+| `policyVersion` | positive integer | A changed disclosure requires renewed consent |
+| `status` | enum | `unknown`, `granted`, `revoked` |
+| `providerId` | literal | `nlsc-emap5` only |
+| `grantedAt` | timestamp or null | Present only after explicit opt-in |
+| `revokedAt` | timestamp or null | Present after revocation |
+
+Consent survives reopen on the same device/application origin until revoked or invalidated by a new
+policy version. It stores no photo, coordinate, or annotation value.
+
+## MapPreviewState
+
+Map state is ephemeral and MUST NOT become the canonical coordinate or a restorable browsing session.
+
+| Field | Type | Rules |
+|-------|------|-------|
+| `status` | enum | `closed`, `consentRequired`, `loading`, `open`, `offline`, `providerError` |
+| `photoId` | UUID or null | Active photo whose accepted coordinate is copied for display |
+| `center` | WGS84 or null | Read-only copy; changes to pan/zoom are not persisted to `CoordinateRecord` |
+| `onlineIndicatorVisible` | boolean | Must be true for the complete mounted lifetime |
+| `providerId` | literal or null | `nlsc-emap5` when loading/open |
+
+Closing or revoking destroys the mounted map. Decline, offline state, or provider failure changes no
+photo/editor/export state and leaves the core workflow usable.

@@ -31,6 +31,8 @@ independently from viewport width.
 | Editor | Offline/draft status, photo navigator, stage, Coordinate/Overlays/Export tabs, Review export action and disabled reason |
 | Export review | Per-item Ready/Omit/Needs resolution, metadata choice, format fallback, explicit confirmation |
 | Export progress/result | Per-photo progress, durable successes/failures, retry failed items |
+| Map consent | Provider/network disclosure, explicit accept/decline, no request before acceptance |
+| Map preview | EMAP5 attribution, persistent online indicator, close/revoke, offline/provider-error isolation |
 | Offline not ready | Persistent explanation and recovery action; no false readiness claim |
 | Invalid/unsupported | Field/item error, actionable correction/remove/replace, no color-only cue |
 | Disabled | Control remains understandable and has an associated reason |
@@ -41,6 +43,12 @@ independently from viewport width.
 The coordinate card always shows provenance text, value, selected format, zone/precision/accuracy as
 applicable, and validation status. Fixed provenance labels are `Capture metadata`, `CURRENT GPS`, and
 `Manual input`. Auto-resolved TM2 zone is visible before export.
+
+An explicit `Preview on map` action opens the consent state when needed and otherwise opens a
+contained preview centered on a read-only copy of the accepted coordinate. Map pan/zoom never updates
+the coordinate. Decline, offline state, tile failure, close, or consent revocation leaves coordinate,
+overlay, draft, and export state unchanged. The online indicator remains visible for the entire time
+the map is mounted, and revocation is reachable from the preview and settings.
 
 ## Overlay interaction
 
@@ -68,5 +76,6 @@ applicable, and validation status. Fixed provenance labels are `Capture metadata
 
 Run the single-photo happy path with touch and keyboard-only input; validate pointer, tap-only, and
 keyboard overlay manipulation; inspect the four viewport/zoom fixtures; perform one desktop and one
-mobile screen-reader smoke path; and run a 20-photo navigator/result scenario with one invalid item.
-Visual inspection is required for preview/export equivalence and all documented states.
+mobile screen-reader smoke path; run a 20-photo navigator/result scenario with one invalid item; and
+inspect map consent, open, offline, provider-error, close, and revoke states without coordinate
+mutation. Visual inspection is required for preview/export equivalence and all documented states.

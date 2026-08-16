@@ -23,7 +23,7 @@ an independently reviewable increment. All file paths are repository-relative.
 
 **Purpose**: Bootstrap one client-only Svelte/TypeScript PWA and its test/quality toolchain.
 
-- [ ] T001 Create the Svelte 5 and TypeScript application skeleton, dependency scripts, entry point, and English localization catalog in `package.json`, `index.html`, `src/main.ts`, `src/App.svelte`, `src/app.css`, `src/i18n/index.ts`, and `src/i18n/en.ts`
+- [ ] T001 Create the Svelte 5 and TypeScript application skeleton, dependency scripts (including locally bundled, lazy-loadable `leaflet@1.9.4`), entry point, and English localization catalog in `package.json`, `index.html`, `src/main.ts`, `src/App.svelte`, `src/app.css`, `src/i18n/index.ts`, and `src/i18n/en.ts`
 - [ ] T002 Configure Vite, TypeScript, Svelte, Vitest, and browser test environments in `vite.config.ts`, `tsconfig.json`, `svelte.config.js`, and `tests/setup.ts`
 - [ ] T003 [P] Configure ESLint and Prettier with zero-warning CI scripts in `eslint.config.js`, `.prettierrc`, and `.prettierignore`
 - [ ] T004 [P] Configure Playwright projects for supported mobile and desktop fixtures in `playwright.config.ts` and `tests/e2e/fixtures.ts`
@@ -51,7 +51,7 @@ all user stories.
 ### Foundational implementation
 
 - [ ] T010 Implement typed success/failure results and sanitized diagnostic codes in `src/domain/result.ts` and `src/infrastructure/platform/diagnostics.ts`
-- [ ] T011 [P] Implement SourcePhoto, CoordinateRecord, TextOverlay, ExportConfiguration, ExportResult, and EditingSession types in `src/domain/photos/types.ts`, `src/domain/coordinates/types.ts`, `src/domain/overlays/types.ts`, `src/domain/export/types.ts`, and `src/domain/drafts/types.ts`
+- [ ] T011 [P] Implement SourcePhoto, CoordinateRecord, TextOverlay, ExportConfiguration, ExportResult, EditingSession, MapNetworkConsent, and ephemeral MapPreviewState types in `src/domain/photos/types.ts`, `src/domain/coordinates/types.ts`, `src/domain/overlays/types.ts`, `src/domain/export/types.ts`, `src/domain/drafts/types.ts`, and `src/domain/map/types.ts`
 - [ ] T012 Implement JPEG/PNG count, byte, dimension, pixel-area, and aggregate-storage limit validation in `src/domain/photos/photoLimits.ts`
 - [ ] T013 Implement display-oriented normalized geometry, bounds clamping, ordering, and shared layout primitives in `src/domain/overlays/geometry.ts` and `src/renderer/layout.ts`
 - [ ] T014 Implement the canonical editing-session reducer and selectors, making T007–T009 green, in `src/domain/drafts/editingSession.ts` and `src/domain/drafts/selectors.ts`
@@ -61,7 +61,7 @@ dependencies.
 
 ---
 
-## Phase 3: User Story 1 — Annotate and Export One Photo (Priority: P1) MVP
+## Phase 3: User Story 1 — Annotate and Export One Photo (Priority: P1) Vertical Slice
 
 **Goal**: Import one JPEG/PNG photo, use capture GPS, manual WGS84, or explicit current location, add
 and style text overlays, preview, and export a separate copy while preserving the source and the
@@ -75,9 +75,9 @@ is unchanged. Repeat missing-GPS handling with manual WGS84 and explicit `CURREN
 
 - [ ] T015 [P] [US1] Write and run failing import tests for magic bytes, dimensions, EXIF GPS/orientation, malformed metadata, and source SHA-256 identity in `tests/unit/metadata/readMetadata.spec.ts` and `tests/integration/import/singlePhoto.spec.ts`
 - [ ] T016 [P] [US1] Write and run failing coordinate tests for capture, manual WGS84 DD, explicit geolocation grant/deny/timeout, accuracy acceptance, and immutable provenance in `tests/unit/coordinates/workingCoordinate.spec.ts`
-- [ ] T017 [P] [US1] Write and run failing overlay tests for Unicode content, add/edit/remove/reorder, pointer/keyboard movement parity, and contrast warnings in `tests/unit/overlays/overlayEditor.spec.ts`
-- [ ] T018 [P] [US1] Write and run failing renderer tests for EXIF orientations 1–8, bundled-font text, preview/export geometry, worker fallback, and resource cleanup in `tests/unit/renderer/renderPhoto.spec.ts` and `tests/integration/export/orientationFidelity.spec.ts`
-- [ ] T019 [P] [US1] Write and run failing export tests for JPEG/PNG MIME verification, default dimensions/quality, safe metadata preserve/remove, unchanged GPS, conflict-safe names, cancellation, and source hash stability in `tests/unit/metadata/writeMetadata.spec.ts` and `tests/integration/export/singlePhoto.spec.ts`
+- [ ] T017 [P] [US1] Write and run failing overlay tests for explicit `title`, `team`, `coordinate`, and `freeform` roles, Unicode content, add/edit/remove/reorder, pointer/keyboard movement parity, and contrast warnings in `tests/unit/overlays/overlayEditor.spec.ts`
+- [ ] T018 [P] [US1] Write and run failing renderer tests for EXIF orientations 1–8, raw-dimension inverse mapping in same-format preservation, upright normalization on format change/removal, bundled-font text, preview/export geometry, worker fallback, and resource cleanup in `tests/unit/renderer/renderPhoto.spec.ts` and `tests/integration/export/orientationFidelity.spec.ts`
+- [ ] T019 [P] [US1] Write and run failing export tests for JPEG/PNG MIME verification, raw-dimension/orientation defaults, disclosed upright normalization, quality, safe metadata preserve/remove, unchanged GPS, conflict-safe names, cancellation, and source hash stability in `tests/unit/metadata/writeMetadata.spec.ts` and `tests/integration/export/singlePhoto.spec.ts`
 - [ ] T020 [US1] Write and run the failing single-photo component/E2E journey, including empty/loading/error/disabled/success states and keyboard-only completion, in `tests/component/SinglePhotoWorkspace.spec.ts` and `tests/e2e/desktop/single-photo.spec.ts`
 
 ### Implementation for User Story 1
@@ -85,8 +85,8 @@ is unchanged. Repeat missing-GPS handling with manual WGS84 and explicit `CURREN
 - [ ] T021 [US1] Implement bounded JPEG/PNG signature, dimension, orientation, GPS, and supported metadata parsing with `exifr` in `src/infrastructure/metadata/readMetadata.ts` and `src/infrastructure/metadata/metadataProfile.ts`
 - [ ] T022 [US1] Implement source digesting and the common single-file import pipeline without source-handle writes in `src/domain/photos/importPhoto.ts` and `src/infrastructure/platform/hashBlob.ts`
 - [ ] T023 [US1] Implement capture/manual WGS84 working-coordinate replacement and explicit one-shot geolocation with accuracy review in `src/domain/coordinates/workingCoordinate.ts` and `src/infrastructure/platform/geolocation.ts`
-- [ ] T024 [US1] Implement overlay add/edit/remove/reorder, normalized move/resize steps, and contrast status in `src/domain/overlays/overlayEditor.ts`
-- [ ] T025 [US1] Implement shared preview/export drawing, explicit orientation transforms, encoder MIME checks, and main-thread fallback in `src/renderer/preview.ts`, `src/renderer/export.ts`, and `src/renderer/canvasRenderer.ts`
+- [ ] T024 [US1] Implement `title`, `team`, `coordinate`, and `freeform` overlay defaults plus add/edit/remove/reorder, normalized move/resize steps, and contrast status in `src/domain/overlays/overlayEditor.ts`
+- [ ] T025 [US1] Implement shared preview/export drawing, raw-canvas inverse orientation transforms, upright normalization, encoder MIME checks, and main-thread fallback in `src/renderer/preview.ts`, `src/renderer/export.ts`, and `src/renderer/canvasRenderer.ts`
 - [ ] T026 [US1] Implement sequential worker decode/render/encode and deterministic graphical-resource cleanup in `src/workers/photo-renderer.worker.ts` and `src/infrastructure/platform/renderWorkerClient.ts`
 - [ ] T027 [US1] Implement bounds-checked JPEG/PNG supported-metadata attachment and explicit removal without capture-GPS rewriting in `src/infrastructure/metadata/writeMetadata.ts`, making T018–T019 green
 - [ ] T028 [US1] Implement export defaults, fallback disclosure, conflict-safe naming, save-picker/download handoff, and accurate `handedOff` results in `src/domain/export/exportPhoto.ts` and `src/infrastructure/platform/saveOutput.ts`
@@ -94,10 +94,11 @@ is unchanged. Repeat missing-GPS handling with manual WGS84 and explicit `CURREN
 - [ ] T030 [P] [US1] Build the provenance/accuracy card and explicit current-location/manual-WGS84 controls in `src/components/coordinate/CoordinateCard.svelte` and `src/components/coordinate/Wgs84Input.svelte`
 - [ ] T031 [P] [US1] Build the semantic overlay list, inspector controls, direct-manipulation stage, and explicit zoom controls in `src/components/overlays/OverlayList.svelte`, `src/components/overlays/OverlayInspector.svelte`, and `src/components/workspace/PreviewStage.svelte`
 - [ ] T032 [P] [US1] Build export settings, review confirmation, progress, and durable result UI in `src/components/export/ExportSettings.svelte`, `src/components/export/ExportReview.svelte`, and `src/components/export/ExportResults.svelte`
-- [ ] T033 [US1] Integrate the single-photo canonical state and UI in `src/App.svelte` and `src/components/workspace/Workspace.svelte`, then make T015–T020 green and visually inspect the approved single-photo fixtures
+- [ ] T033 [US1] Integrate the single-photo canonical state and UI in `src/App.svelte` and `src/components/workspace/Workspace.svelte`, make T015–T020 green, visually inspect the approved single-photo fixtures, and record the first-functional three-run 4032×3024 preview/export baseline in `specs/001-annotate-photos/verification.md`
 
-**Checkpoint**: User Story 1 is a complete independently demonstrable MVP. Do not begin refactoring
-until its focused tests are green.
+**Checkpoint**: User Story 1 is an independently demonstrable non-release vertical slice. It is not a
+release-ready MVP until the global PWA, draft, accessibility, privacy, and supported-platform gates
+are complete. Do not begin refactoring until its focused tests are green.
 
 ---
 
@@ -115,7 +116,7 @@ auto-resolved zone remains visible through export.
 - [ ] T034 [P] [US2] Copy the approved MIT vector fixture and digest, then write and run failing integrity/vector tests for WGS84, TWD97, TWD67, MGRS, and Taipower in `tests/unit/fixtures/test-vectors.json`, `tests/unit/fixtures/vectors-digest.txt`, and `tests/unit/coordinates/converters.spec.ts`
 - [ ] T035 [P] [US2] Write and run failing parser tests for all manual formats and typed malformed/out-of-range/out-of-coverage/unsupported-precision results in `tests/unit/coordinates/parseCoordinateInput.spec.ts`
 - [ ] T036 [P] [US2] Write and run failing tests for TWD97 zone auto-resolution visibility, TWD67 zone-121 tolerances, MGRS southwest-corner semantics, and Taipower unsupported cells in `tests/unit/coordinates/coordinateRegressions.spec.ts`
-- [ ] T037 [US2] Write and run failing component/E2E tests for format input, display selection, coverage errors, provenance, and export labels in `tests/component/CoordinateInspector.spec.ts` and `tests/e2e/desktop/coordinate-formats.spec.ts`
+- [ ] T037 [US2] Write and run failing component/E2E tests for format input, display selection, coverage errors, provenance, export labels, map consent persistence/revocation, zero request before consent, fixed NLSC request pattern, online indicator/attribution, offline/provider failure, and coordinate immutability in `tests/component/CoordinateInspector.spec.ts`, `tests/component/MapPreview.spec.ts`, and `tests/e2e/desktop/coordinate-formats.spec.ts`
 
 ### Implementation for User Story 2
 
@@ -123,7 +124,7 @@ auto-resolved zone remains visible through export.
 - [ ] T039 [US2] Implement the local coordinate facade, parser, display formatter, coverage checks, and surfaced zone/precision metadata in `src/domain/coordinates/parseCoordinateInput.ts`, `src/domain/coordinates/formatCoordinate.ts`, and `src/domain/coordinates/index.ts`, making T034–T036 green
 - [ ] T040 [P] [US2] Build per-format manual input fields and typed validation feedback in `src/components/coordinate/CoordinateInput.svelte` and `src/components/coordinate/CoordinateErrors.svelte`
 - [ ] T041 [P] [US2] Build display-format/precision selection and explicit zone/coverage/provenance presentation in `src/components/coordinate/CoordinateFormatSelector.svelte` and `src/components/coordinate/CoordinateCard.svelte`
-- [ ] T042 [US2] Integrate all coordinate formats into the overlay/export state in `src/components/workspace/Workspace.svelte` and `src/domain/overlays/coordinateOverlay.ts`, then make T037 green and verify reference output against the approved vectors
+- [ ] T042 [US2] Integrate all coordinate formats into overlay/export state and implement versioned local map consent plus lazy-loaded Leaflet EMAP5 preview/teardown with no tile caching or state mutation in `src/components/workspace/Workspace.svelte`, `src/domain/overlays/coordinateOverlay.ts`, `src/domain/map/mapConsent.ts`, `src/infrastructure/map/emap5.ts`, `src/components/map/MapConsent.svelte`, and `src/components/map/MapPreview.svelte`; make T037 green, verify vectors, and record one Android/Windows real-tile CORS smoke without making CI depend on NLSC availability
 
 **Checkpoint**: User Story 2 passes every approved coordinate vector and never fabricates an
 out-of-coverage value.
@@ -134,7 +135,8 @@ out-of-coverage value.
 
 **Goal**: Install and reopen the application offline, restore local drafts, retain the universal file
 input, and provide the same accessible workflow at supported mobile/desktop sizes. Enable Web Share
-Target only after its zero-egress release gate passes.
+Target only after its zero-egress release gate passes; failure blocks the supported Android release
+unless the specification and supported matrix are explicitly revised.
 
 **Independent Test**: Establish readiness on representative Android Chrome and Windows Chrome/Edge,
 disconnect the network, reopen, import/annotate/export, restore and clear a draft, and complete the
@@ -144,7 +146,7 @@ workflow with touch and keyboard at documented viewport fixtures.
 
 - [ ] T043 [P] [US3] Write and run failing IndexedDB tests for transactional revisions, Blob restoration, additive migration/rollback, export/discard cleanup, persistence denial, and quota failure in `tests/unit/drafts/draftRepository.spec.ts` and `tests/integration/storage/draftRecovery.spec.ts`
 - [ ] T044 [P] [US3] Write and run failing PWA tests for manifest identity, precache completeness, readiness handshake, failed-update rollback, and no user photos in Cache Storage in `tests/integration/offline/pwaReadiness.spec.ts`
-- [ ] T045 [P] [US3] Write and run failing privacy/share tests for zero user-data network calls and exact local POST interception without `fetch()` forwarding in `tests/integration/offline/localOnly.spec.ts` and `tests/integration/offline/shareTarget.spec.ts`
+- [ ] T045 [P] [US3] Write and run failing privacy/share tests for zero user-data network calls except explicitly consented NLSC tile images and exact local POST interception without `fetch()` forwarding in `tests/integration/offline/localOnly.spec.ts` and `tests/integration/offline/shareTarget.spec.ts`
 - [ ] T046 [P] [US3] Write and run failing responsive/accessibility tests for documented states, focus order, drag alternatives, modal focus return, status announcements, and target sizing in `tests/component/AdaptiveWorkspace.spec.ts` and `tests/component/AccessibilityInteractions.spec.ts`
 - [ ] T047 [US3] Write and run failing offline mobile/desktop E2E journeys for readiness, file-input fallback, reload restoration, and draft cleanup in `tests/e2e/mobile/offline-workflow.spec.ts` and `tests/e2e/desktop/offline-workflow.spec.ts`
 
@@ -152,14 +154,15 @@ workflow with touch and keyboard at documented viewport fixtures.
 
 - [ ] T048 [US3] Implement the versioned `idb` schema, additive migrations, transactional Blob/session persistence, quota estimation, and persistence status in `src/infrastructure/storage/database.ts`, `src/infrastructure/storage/migrations.ts`, and `src/infrastructure/storage/draftRepository.ts`
 - [ ] T049 [US3] Implement debounced autosave, pointer-up/visibility flush, restore, successful-export cleanup, and explicit discard in `src/domain/drafts/draftService.ts` and `src/components/workspace/DraftRecovery.svelte`
-- [ ] T050 [US3] Configure the stable manifest identity, production CSP, atomic application-shell precache, self-hosted assets, update rollback, and readiness message protocol in `vite.config.ts`, `src/infrastructure/pwa/readiness.ts`, and `src/infrastructure/pwa/serviceWorker.ts`
+- [ ] T050 [US3] Configure the stable manifest identity, production CSP in `index.html` (`connect-src 'none'`; NLSC only in `img-src`), atomic application-shell precache with no map-tile route, self-hosted assets, update rollback, and readiness message protocol in `index.html`, `vite.config.ts`, `src/infrastructure/pwa/readiness.ts`, and `src/infrastructure/pwa/serviceWorker.ts`
 - [ ] T051 [US3] Implement the exact Web Share Target POST handler and build-time disabled-until-validated manifest gate in `src/infrastructure/pwa/shareTarget.ts` and `vite.config.ts`, making T044–T045 green without adding a server upload path
 - [ ] T052 [P] [US3] Build persistent offline/draft/storage states and install guidance in `src/components/workspace/OfflineStatus.svelte`, `src/components/workspace/DraftStatus.svelte`, and `src/components/workspace/InstallHelp.svelte`
 - [ ] T053 [US3] Implement the documented stacked/two-region/three-region layout, 320 CSS px reflow, pointer-independent controls, visible focus, and non-obscuring sticky regions in `src/app.css` and `src/components/workspace/Workspace.svelte`
 - [ ] T054 [US3] Make T043–T047 green, then run and record the focused Android/Windows offline, share-gate, touch, keyboard, viewport, 400% zoom, and screen-reader smoke results in `specs/001-annotate-photos/verification.md`
 
-**Checkpoint**: User Story 3 works offline after explicit readiness. `share_target` remains disabled in
-the release manifest unless its physical-device zero-egress result is recorded as PASS.
+**Checkpoint**: User Story 3 works offline after explicit readiness. The supported Android release is
+blocked unless the physical-device Web Share Target zero-egress result is recorded as PASS or an
+approved specification/platform-matrix revision removes that support claim.
 
 ---
 
@@ -186,7 +189,7 @@ source hashes and recoverable partial draft state.
 - [ ] T060 [US4] Implement the sequential export queue, cancellation boundaries, partial result retention, omission, and retry in `src/domain/export/batchExport.ts`
 - [ ] T061 [P] [US4] Build the adaptive photo strip/rail with text-and-icon statuses and per-photo coordinate review in `src/components/workspace/PhotoNavigator.svelte` and `src/components/workspace/PhotoNavigatorItem.svelte`
 - [ ] T062 [P] [US4] Build shared-setting application, unresolved/omit review, sequential progress, and partial-result retry UI in `src/components/export/BatchSettings.svelte`, `src/components/export/BatchReview.svelte`, and `src/components/export/BatchResults.svelte`
-- [ ] T063 [US4] Integrate batch state, draft persistence, and sequential export into `src/components/workspace/Workspace.svelte`, make T055–T058 green, and record the focused batch reliability baseline in `specs/001-annotate-photos/verification.md`
+- [ ] T063 [US4] Integrate batch state, draft persistence, and sequential export into `src/components/workspace/Workspace.svelte`, make T055–T058 green, and record the first-functional 20-valid-plus-1-invalid reliability baseline in `specs/001-annotate-photos/verification.md`
 
 **Checkpoint**: All four stories are independently evidenced; one bad item never destroys a valid
 source, completed output, or retryable draft.
@@ -198,14 +201,17 @@ source, completed output, or retryable draft.
 **Purpose**: Close only the documented cross-cutting security, compatibility, performance,
 accessibility, documentation, and definition-of-done risks.
 
-- [ ] T064 [P] Write and run failing malformed-segment/fuzz regression tests for metadata bounds, allocation limits, and sanitized diagnostics in `tests/unit/metadata/malformedSegments.spec.ts` and `tests/unit/platform/diagnostics.spec.ts`
+- [ ] T064 [P] Write and run failing tests against a bounded deterministic corpus of malformed metadata segments for bounds, allocation limits, and sanitized diagnostics in `tests/unit/metadata/malformedSegments.spec.ts`, `tests/unit/metadata/fixtures/malformed/`, and `tests/unit/platform/diagnostics.spec.ts`
 - [ ] T065 Implement the minimum bounds/allocation and diagnostic hardening needed to make T064 green in `src/infrastructure/metadata/readMetadata.ts`, `src/infrastructure/metadata/writeMetadata.ts`, and `src/infrastructure/platform/diagnostics.ts`
-- [ ] T066 [P] Verify production CSP, absence of runtime CDN/analytics/server APIs, bundled license attribution, and source-photo exclusion from Cache Storage in `vite.config.ts`, `package.json`, and `THIRD_PARTY_NOTICES.md`
-- [ ] T067 [P] Reconcile implemented responsive states, keyboard/touch behavior, metadata limitations, migrations, and rollback with `docs/ui/photo-annotation-workspace.md` and `docs/adr/0001-offline-photo-annotation-architecture.md`
-- [ ] T068 Run only the focused performance checks—five 4032×3024 JPEG preview/export runs per representative Android and Windows device plus one 20-photo reliability run—and record phase timings/outcomes in `specs/001-annotate-photos/verification.md`
+- [ ] T066 [P] Verify the production-built `index.html` CSP, absence of runtime CDN/analytics/server APIs, NLSC-only image exception, no map-tile Workbox route, Leaflet chunks absent from initial startup and ≤60 KiB gzip, bundled Leaflet/NLSC/coordinate/font notices, and source-photo exclusion from Cache Storage in `index.html`, `vite.config.ts`, `package.json`, `THIRD_PARTY_NOTICES.md`, and `tests/integration/offline/productionPolicy.spec.ts`
+- [ ] T067 [P] Reconcile implemented responsive/map states, keyboard/touch behavior, metadata/orientation limitations, migrations, privacy boundaries, and rollback with `docs/ui/photo-annotation-workspace.md` and `docs/adr/0001-offline-photo-annotation-architecture.md`
+- [ ] T068 Run only the focused final performance checks—five 4032×3024 JPEG preview/export runs per representative Android and Windows device plus one final 20-photo reliability run—compare with T033/T063 baselines, require budgets and no unexplained median regression over 10%, and record outcomes in `specs/001-annotate-photos/verification.md`
 - [ ] T069 Run the focused first-time usability validation with at least 10 representative participants completing the single-photo workflow on supported mobile and desktop environments, verify at least 90% finish each environment without assistance within three minutes, and record anonymized aggregate outcomes in `specs/001-annotate-photos/verification.md`
-- [ ] T070 Perform independent role-specific reviews of metadata rewriting, Web Share Target/service-worker privacy, draft migration, preview/export fidelity, and accessibility; resolve every material finding and record outcomes in `specs/001-annotate-photos/verification.md`
-- [ ] T071 Run `npm run format:check`, `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, and the relevant Playwright projects, then record outcomes, skipped checks, blockers, remaining risks, ADR impact, and UI-documentation impact in `specs/001-annotate-photos/verification.md`
+- [ ] T070 Perform an independent read-only metadata/orientation review covering bounds-checked rewriting, raw/upright transforms, capture-GPS preservation, and source immutability; record findings only in `specs/001-annotate-photos/verification.md`
+- [ ] T071 Perform an independent read-only platform/privacy review covering service-worker updates, Web Share Target zero egress, CSP enforcement, EMAP5 consent/host/no-cache boundaries, and diagnostics; record findings only in `specs/001-annotate-photos/verification.md`
+- [ ] T072 Perform an independent read-only UX/reliability review covering draft migration, preview/export fidelity, responsive/accessibility states, partial results, and performance evidence without repeating T070/T071 scopes; record findings only in `specs/001-annotate-photos/verification.md`
+- [ ] T073 Have the primary implementer resolve every material T070–T072 finding in its owning source/tests/docs and record each disposition in `specs/001-annotate-photos/verification.md`
+- [ ] T074 Run `npm run format:check`, `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, and the relevant Playwright projects, then record outcomes, skipped checks, blockers, remaining risks, ADR impact, and UI-documentation impact in `specs/001-annotate-photos/verification.md`
 
 ---
 
@@ -215,7 +221,7 @@ accessibility, documentation, and definition-of-done risks.
 
 - Phase 1 (Setup) has no dependency.
 - Phase 2 (Foundational) depends on Phase 1 and blocks all user stories.
-- Phase 3 (US1) depends on Phase 2 and is the MVP.
+- Phase 3 (US1) depends on Phase 2 and is a non-release vertical slice.
 - Phase 4 (US2) depends on the US1 working-coordinate and workspace integration points; its converter
   tests and vendoring preparation may start after Phase 2 in disjoint files.
 - Phase 5 (US3) depends on the US1 core workflow; its storage/PWA tests may start after Phase 2 in
@@ -227,7 +233,7 @@ accessibility, documentation, and definition-of-done risks.
 ### User story graph
 
 ```text
-Setup -> Foundation -> US1 (MVP) -> US2 ----\
+Setup -> Foundation -> US1 (vertical slice) -> US2 ----\
                               \-> US3 -----+-> US4 -> Release gates
 ```
 
@@ -307,11 +313,12 @@ T057: Batch component tests
 
 ## Implementation Strategy
 
-### MVP first
+### Vertical slice first
 
 1. Complete Setup and Foundational phases.
 2. Complete User Story 1 through T033.
-3. Stop and run its independent test on desktop and the smallest supported mobile viewport.
+3. Stop and run its independent test on desktop and the smallest supported mobile viewport; do not
+   describe this checkpoint as a supported release.
 4. Demonstrate import, coordinate provenance, overlay editing, preview, safe export, and unchanged
    source before expanding scope.
 
@@ -327,8 +334,10 @@ T057: Batch component tests
 ## Notes
 
 - Never delete, weaken, skip, or rewrite a test merely to pass a task.
-- Do not add maps, cloud services, ZIP packaging, analytics, filters, native wrappers, OPFS, or broad
-  imaging WASM without returning to specification/plan review.
-- Web Share Target remains off unless its physical-device zero-egress gate passes.
-- Performance work is limited to T068; no soak test or broad device benchmark is required.
+- Do not add basemap switching, offline map packages, cloud services, ZIP packaging, analytics,
+  filters, native wrappers, OPFS, or broad imaging WASM without returning to specification/plan review.
+- Web Share Target remains off unless its physical-device zero-egress gate passes, and a failed gate
+  blocks the supported Android release unless the specification/platform matrix is revised.
+- Performance work is limited to the small baselines in T033/T063 and final comparison in T068; no
+  soak test or broad device benchmark is required.
 - Commit after a coherent task or test/implementation group, preserving the Red-Green-Refactor record.

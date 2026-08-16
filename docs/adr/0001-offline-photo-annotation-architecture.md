@@ -8,7 +8,8 @@
 ## Context
 
 Photo Marker must run as an installable offline application on a supported phone and computer. It
-imports up to 20 JPEG/PNG photos, reads or accepts coordinates, adds accessible text overlays,
+imports up to 20 JPEG/PNG photos, reads or accepts coordinates, optionally previews the accepted
+coordinate on NLSC EMAP5 after network consent, adds accessible text overlays,
 preserves a documented metadata profile, saves local drafts, and exports new images without changing
 the sources or transmitting user content. The implementation must remain small, responsive for a
 representative 12 MP photo, compatible with browser storage/update constraints, and consistent with
@@ -37,13 +38,14 @@ after an active current-version service worker confirms a complete atomic cache 
 Keep the prior cache operational until the new version activates successfully.
 
 Store user photos only in memory and IndexedDB, never in Cache Storage. Bundle dependencies locally,
-use a restrictive CSP including `connect-src 'none'`, and permit diagnostics to contain only stable
-codes and non-sensitive phase timings. Application code must never put photo pixels, metadata,
-coordinates, or annotations into network requests.
+keep `connect-src 'none'`, and allow `https://wmts.nlsc.gov.tw` only in `img-src` for the consented
+EMAP5 preview. Diagnostics contain only stable codes and non-sensitive phase timings. Application
+code must never put photo pixels, metadata, coordinates, or annotations into network requests.
 
 Web Share Target is a release-gated enhancement. Its exact POST action is intercepted by the service
 worker, never forwarded, and enabled only after a physical-device test proves zero network egress.
-The file input remains universal. Explicit geolocation may depend on OS/browser network-derived
+Failure blocks the supported Android release unless the specification/platform matrix is revised;
+file input is not a substitute for that release requirement. Explicit geolocation may depend on OS/browser network-derived
 signals, but Photo Marker never requests it automatically, watches it, or transmits the result.
 
 ### 3. Transactional IndexedDB drafts
@@ -69,6 +71,10 @@ Perform full-resolution decode/render/encode sequentially in a dedicated worker 
 unavailable. Decode bounded previews and release graphical resources before advancing. Concurrency
 remains 1 until a later measurement and plan justify change.
 
+Same-format metadata-preserving export renders at raw encoded dimensions, inverse-maps normalized
+display geometry through EXIF orientation, and retains that orientation. Format change or metadata
+removal bakes orientation into upright display pixels and discloses the dimension/orientation change.
+
 ### 5. Explicit metadata compatibility profile
 
 Use `exifr` for bounded Blob-based GPS/orientation reads and a small bounds-checked writer for:
@@ -92,7 +98,22 @@ Retain the verified TWD67 four-parameter zone-121 transform, surfaced TWD97 zone
 precision semantics, and mainland-only Taipower coverage. Formula or coverage changes require updated
 vectors and ADR assessment.
 
-### 7. Bounded inputs and progressive output handoff
+### 7. Consent-gated EMAP5 preview
+
+Use locally bundled, dynamically imported `leaflet@1.9.4` for one raster WMTS preview after explicit,
+versioned origin-local consent and an open action. Use only NLSC `EMAP5` at
+`https://wmts.nlsc.gov.tw/wmts/EMAP5/default/GoogleMapsCompatible/{z}/{y}/{x}` (256 px, z0–19), with
+anonymous image loading and no-referrer policy. Keep a permanent online indicator and NLSC source
+attribution while mounted. The map receives a read-only coordinate copy; it never writes coordinate,
+provenance, draft, overlay, or export state.
+
+Do not precache/runtime-cache/bulk-download tiles or silently switch providers. Offline state,
+provider error, decline, close, and revocation tear down or avoid the map and leave the core workflow
+usable. `EMAP5` follows NLSC service terms and is not the distinct `EMAP5_OPENDATA` layer. Leaflet's
+BSD-2-Clause notice and the NLSC terms/source notice belong in `THIRD_PARTY_NOTICES.md`. The lazy
+Leaflet JavaScript plus CSS remains outside initial startup chunks and within 60 KiB gzip.
+
+### 8. Bounded inputs and progressive output handoff
 
 Support JPEG/PNG, 1–20 photos, at most 13 MP, 8192 px per axis, and 32 MiB compressed per file. Total
 accepted bytes are at most the lesser of 640 MiB and 80% of reported storage headroom. Validate magic
@@ -112,6 +133,7 @@ that the browser wrote a specific path. ZIP packaging is out of scope.
 - DOM interaction remains accessible while Canvas supplies pixel fidelity.
 - Metadata and coordinate claims are narrow, documented, and testable.
 - Vendoring reuses proven Taiwan coordinate behavior without importing a map application.
+- The map dependency is proportionate to a single raster preview and stays outside the offline core.
 
 ### Costs and risks
 
@@ -122,12 +144,16 @@ that the browser wrote a specific path. ZIP packaging is out of scope.
   be worse because it may mislabel output pixels. This limitation must be disclosed.
 - Sequential batch export favors reliability over throughput.
 - iOS/Safari and Firefox installed-app support are deferred.
+- NLSC availability and terms provide no app-controlled SLA; preview failure must remain isolated.
 
 ## Compatibility, migration, and rollback
 
 - Persisted records carry schema and record versions; migrations are additive and transactional.
 - A service-worker update activates only with a complete precache; rollback uses the prior complete
-  shell. A release may remove `share_target` without affecting file input.
+  shell. The supported Android release may remove `share_target` only with an approved specification
+  and supported-matrix revision.
+- A Leaflet/NLSC regression disables only the optional preview; it does not change the coordinate or
+  offline core. No alternative provider is selected silently.
 - Worker-rendering regressions fall back to the same renderer on the main thread.
 - Metadata regressions disable preservation for affected files and request explicit removal; they do
   not silently strip or corrupt metadata.
@@ -140,8 +166,10 @@ that the browser wrote a specific path. ZIP packaging is out of scope.
 Use Red-Green-Refactor for behavior slices. Required focused evidence includes coordinate vectors,
 malformed metadata bounds, EXIF orientations 1–8, source SHA-256 stability, preview/export fixtures,
 draft migration/recovery, offline update rollback, Web Share Target zero egress, keyboard/touch and
-screen-reader smoke paths, five 12 MP timing runs per representative Android/Windows device, and one
-20-photo-plus-invalid reliability run per device. No soak test or broad benchmark suite is required.
+screen-reader smoke paths, EMAP5 consent/network isolation, a three-run first-functional 12 MP
+baseline followed by five final runs per representative Android/Windows device, and first/final
+20-photo-plus-invalid reliability runs. Final medians must not regress over 10% without explanation
+and approval. No soak test or broad benchmark suite is required.
 
 ## Alternatives rejected
 
@@ -152,3 +180,6 @@ screen-reader smoke paths, five 12 MP timing runs per representative Android/Win
 - **OPFS plus IndexedDB initially**: adds cross-store migration/orphan complexity without evidence.
 - **Direct dependency on `pwa_map`**: it is a private map application without a stable library API.
 - **Immediate shared coordinate package**: premature without a second coordinated package consumer.
+- **MapLibre for the raster preview**: WebGL, worker, vector, and style-system scope is unnecessary.
+- **EMAP5_OPENDATA substitution**: it is a different, lower-zoom layer and cannot silently replace the
+  specified EMAP5 source merely because its open-data license is clearer.

@@ -28,17 +28,23 @@ input use identical validation, persistence, and result types.
 
 - Preview and export use the same layout/text-measurement rules and bundled fonts.
 - Overlay geometry is normalized to the display-oriented image.
-- EXIF orientations 1–8 produce equivalent preview and output geometry.
+- Same-format metadata-preserving output uses the raw encoded dimensions, inverse-maps display
+  overlay geometry through EXIF orientation, and retains the source orientation value.
+- Format change or supported-metadata removal bakes the display orientation into upright pixels,
+  uses display-oriented dimensions, and discloses the normalization before confirmation.
+- EXIF orientations 1–8 produce equivalent visible preview/output geometry in both output modes.
 - Full-resolution processing concurrency is exactly 1 until a later measured plan changes it.
 - The worker path and main-thread fallback return the same typed render result.
 - Release decoded/canvas/object-URL resources before advancing to the next full-resolution item.
 
 ## Encoder contract
 
-- Default to the source format and display-equivalent source pixel dimensions.
+- Default to the source format, raw encoded source dimensions, and preserved source orientation.
 - JPEG quality defaults to `0.92` and is user-adjustable; PNG has no lossy quality control.
 - Verify the returned Blob MIME type. Any encoder fallback is disclosed before confirmation.
 - A changed output dimension retains source aspect ratio.
+- A format change or metadata-removal choice switches to upright display dimensions and sets or
+  omits orientation as normalized; it MUST NOT retain an orientation tag that would rotate twice.
 
 ## Supported metadata profile
 

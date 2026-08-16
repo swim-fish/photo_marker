@@ -17,6 +17,8 @@ platform code without a demonstrated need.
 
 **Decision**: Use a client-only Svelte/TypeScript/Vite application with locally bundled dependencies,
 `vite-plugin-pwa`/Workbox, Vitest, Testing Library, Playwright, ESLint, Prettier, and `svelte-check`.
+Add `leaflet@1.9.4` as a locally bundled, dynamically imported dependency used only by the optional
+online map preview.
 
 **Rationale**: The reference coordinate project already uses the same web toolchain, Svelte supports
 one adaptive component hierarchy, and no approved requirement needs a backend.
@@ -29,9 +31,11 @@ management work without reducing scope.
 
 **Decision**: Precache the complete application shell and workers with atomic service-worker updates.
 Declare offline readiness only after an active worker confirms the current cache and IndexedDB opens.
-Use self-hosted assets and a production CSP including `connect-src 'none'`. Cache Storage never holds
-user photos. Web Share Target handles only the exact POST action locally and never calls `fetch()`;
-it remains disabled unless zero network egress is proven.
+Use self-hosted assets and a production CSP with `connect-src 'none'` plus the exact NLSC tile origin
+in `img-src` for the consented online preview. Cache Storage never holds user photos or map
+tiles. Web Share Target handles only the exact POST action locally and never calls `fetch()`; failure
+to prove zero network egress blocks the supported Android release unless the specification and
+supported matrix are explicitly revised.
 
 FR-004 and SC-009 govern application-controlled traffic. Explicit browser geolocation may itself use
 OS/network-derived signals, but the application never transmits its result or user content.
@@ -61,10 +65,13 @@ crash. ZIP packaging adds a dependency and workflow that the specification does 
 ## 5. Rendering, orientation, and batch memory
 
 **Decision**: Use `createImageBitmap` with explicit orientation handling and a shared 2D Canvas layout
-implementation. Keep overlay geometry normalized to the display-oriented image. Run full-resolution
-decode/render/encode sequentially in a dedicated worker with OffscreenCanvas; use the same renderer
-on the main thread as a capability fallback. Generate bounded previews and release ImageBitmap,
-object URL, and canvas resources after each item.
+implementation. Keep overlay geometry normalized to the display-oriented image. For same-format
+metadata-preserving export, allocate the source raw pixel dimensions, inverse-map the display overlay
+geometry through EXIF orientation, and retain that orientation value. For format change or supported
+metadata removal, render upright display pixels, set/omit orientation as normalized, and disclose the
+dimension/orientation change. Run full-resolution decode/render/encode sequentially in a dedicated
+worker with OffscreenCanvas; use the same renderer on the main thread as a capability fallback.
+Generate bounded previews and release ImageBitmap, object URL, and canvas resources after each item.
 
 **Rationale**: One 12 MP RGBA surface is roughly 49 MB before intermediate buffers. Concurrency 1 and
 decode-at-export bound memory, while a shared renderer prevents preview/export drift and keeps the UI
@@ -147,19 +154,54 @@ errors, selection, focus, and dragging alternatives while normalized geometry pr
 **Alternatives considered**: Canvas-only editing is not sufficiently accessible. A per-photo wizard
 is costly for 20 items. Shrinking a desktop three-pane layout fails narrow reflow.
 
-## 10. Focused verification
+## 10. Consent-gated EMAP5 preview
 
-**Decision**: Use test-first slices and only risk-proportional checks. Performance validation is five
-runs of one approved 4032×3024 JPEG on one representative Android device and one representative
-Windows device; every run must meet the 3-second preview and 15-second export budgets. Run one
-20-photo-plus-invalid baseline per representative device, record phase timings, and verify sequential
-processing/no crash rather than imposing an arbitrary batch-duration gate. Do not run soak tests or
-a broad device benchmark suite.
+**Decision**: Provide one contained, optional online preview using locally bundled `leaflet@1.9.4` and
+the NLSC `EMAP5` raster WMTS template:
+`https://wmts.nlsc.gov.tw/wmts/EMAP5/default/GoogleMapsCompatible/{z}/{y}/{x}`. Store a versioned
+origin-local consent preference separately from drafts. Before consent, do not import or initialize
+the map and issue no tile request. While the preview is mounted, show an online indicator and NLSC
+attribution. Revocation destroys the map and blocks later requests until renewed consent.
 
-Focused release checks also cover EXIF orientations 1–8, supported metadata preserve/remove, source
+The service worker MUST NOT precache or runtime-cache NLSC tiles. The production document CSP keeps
+`connect-src 'none'`, adds `https://wmts.nlsc.gov.tw` only to `img-src`, and retains self/blob/data
+restrictions elsewhere. Leaflet uses anonymous image loading with `referrerPolicy='no-referrer'` and
+no custom headers. The map reads a copy of the accepted WGS84 coordinate;
+pan, zoom, tile failure, offline state, or closing the preview never changes that coordinate or blocks
+the offline editor/export workflow. Basemap switching, offline map packages, and general-purpose map
+browsing are out of scope. Provider terms, attribution, endpoint access, and browser CORS behavior
+remain release gates; the app MUST NOT silently switch providers.
+
+**Rationale**: This is the smallest implementation of the approved visual context without weakening
+the offline core or transmitting user content. Leaflet supplies raster tiles, marker, gestures,
+keyboard navigation, error handling, and teardown without MapLibre's WebGL/worker/vector surface.
+Dynamic import and initialization after consent make the no-request-before-consent rule observable.
+Reusing the verified EMAP5 source definition from `pwa_map` avoids inventing an endpoint while keeping
+its broader map application out of scope. The optional Leaflet JavaScript plus CSS has a 60 KiB gzip
+budget, which is checked from the production build without adding a runtime map benchmark.
+
+**Alternatives considered**: MapLibre supports the source but its WebGL, worker, style, and vector
+surface is disproportionate. A static WMS image loses responsive pan/zoom behavior. Vendoring the
+whole `pwa_map` UI imports unrelated navigation, storage, and basemap behavior. Offline tile packages
+and multiple providers materially expand storage, licensing, and update scope.
+
+## 11. Focused verification
+
+**Decision**: Use test-first slices and only risk-proportional checks. Record three runs of one
+approved 4032×3024 JPEG when the first functional single-photo renderer exists, then five runs on the
+final build on one representative Android device and one representative Windows device. Every final
+run must meet the 3-second preview and 15-second export budgets, and its median MUST NOT regress by
+more than 10% without explanation and approval. Record one 20-photo-plus-invalid baseline when the
+batch path first works and one final reliability comparison per representative device. Verify
+sequential processing/no crash rather than imposing an arbitrary batch-duration gate. Do not run
+soak tests or a broad device benchmark suite.
+
+Focused release checks also cover EXIF orientations 1–8 in raw-preserving and normalized-output
+paths, supported metadata preserve/remove, source
 hash stability, coordinate vectors, offline readiness/reopen, share-target zero egress, draft
 migration/recovery, quota/persistence denial, keyboard/touch interaction, 320×568, 568×320, 1024×768,
-400% zoom, and one desktop/mobile screen-reader smoke path.
+400% zoom, one desktop/mobile screen-reader smoke path, and map-preview no-request-before-consent,
+single-origin requests, attribution, revocation, offline/error isolation, and coordinate immutability.
 
 **Rationale**: These checks directly cover the specified risks and measurable outcomes without
 long-running performance work that would not improve the initial decision.
@@ -176,4 +218,9 @@ run is too noisy to validate the stated budgets.
 - [MDN createImageBitmap](https://developer.mozilla.org/en-US/docs/Web/API/Window/createImageBitmap)
 - [MDN OffscreenCanvas](https://developer.mozilla.org/en-US/docs/Web/API/OffscreenCanvas)
 - [WCAG 2.2](https://www.w3.org/TR/WCAG22/)
+- [NLSC WMTS service list](https://maps.nlsc.gov.tw/S09SOA/pro/Wmts_ajax_main.jsp)
+- [NLSC service terms](https://maps.nlsc.gov.tw/pro/use_clause.jsp)
+- [Leaflet 1.9.4 API](https://leafletjs.com/reference.html)
+- [NLSC map service descriptions](https://maps.nlsc.gov.tw/S09SOA/pro/Wms_ajax_list.jsp)
+- `pwa_map/src/map/sources.ts` for the verified `nlsc-emap5` raster template and attribution key
 - `pwa_map/src/coord` in the reference repository, plus its coordinate tests, vectors, and ADRs

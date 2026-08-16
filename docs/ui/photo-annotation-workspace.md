@@ -5,7 +5,8 @@
 This document defines the responsive layout, interaction, accessibility, and state behavior for the
 offline photo annotation workflow. Mobile and desktop use one adaptive workspace and one canonical
 editor state. It covers import, coordinate review, text overlays, draft status, export review, and
-per-photo results. It does not define maps, filters, cloud flows, or separate platform-specific UIs.
+per-photo results and the contained online map preview. It does not define general-purpose map
+browsing, offline maps, filters, cloud flows, or separate platform-specific UIs.
 
 ## Information architecture
 
@@ -16,6 +17,7 @@ The workspace contains these ordered regions:
 3. Preview stage: oriented image, overlays, and explicit zoom controls.
 4. Inspector: Coordinate, Overlays, and Export settings.
 5. Primary actions: Review export, Export, Retry, or contextual recovery.
+6. Optional map preview: consent-gated EMAP5 context for the accepted coordinate.
 
 Only one photo is active at a time. The navigator shows filename, index, and both icon and text status:
 `Ready`, `Missing coordinate`, `Invalid`, `Exported`, or `Failed`. Shared batch settings populate
@@ -77,6 +79,21 @@ spacing requirements. Sticky actions and drawers must not fully obscure the focu
   moving focus.
 - Describe browser download as “handed to the browser,” not as a confirmed filesystem path.
 
+### Online map consent and preview
+
+- `Preview on map` first presents a disclosure naming NLSC and explaining that tile requests reveal
+  the viewed area; it states that photo, annotation, draft, and coordinate values are not sent.
+- Accept and Decline are explicit. Decline returns focus to the invoker and leaves editing/export
+  usable. Saved consent skips the disclosure only after another explicit open action.
+- The contained preview uses EMAP5, an accepted-coordinate marker, zoom controls, Retry, Close, and
+  Revoke consent. Pan/zoom never changes the working coordinate or provenance.
+- A persistent `Online map` indicator and the linked attribution `Data source: National Land
+  Surveying and Mapping Center (NLSC), Taiwan e-Map (contours and house numbers)` remain visible
+  while mounted.
+- Offline and provider failures show `Map unavailable` with Retry/Close; they never replace the
+  editor or disable export. Revocation closes the map and explains that provider logs or browser HTTP
+  cache cannot be retroactively removed.
+
 ## State matrix
 
 | State | Visible and programmatic behavior |
@@ -91,6 +108,9 @@ spacing requirements. Sticky actions and drawers must not fully obscure the focu
 | Storage warning/error | Explain best-effort/denied/quota state and whether current memory state remains |
 | Success | Live announcement plus persistent summary |
 | Error | Affected item, safe error code/message, retry action; no sensitive content in logs |
+| Map consent required | Provider/network disclosure with explicit accept/decline |
+| Map online | Visible online indicator, attribution, marker, zoom, close, and revoke |
+| Map unavailable | Offline/provider reason, Retry/Close, core workflow remains enabled |
 
 ## Coordinate interaction
 
@@ -163,3 +183,6 @@ content, or metadata in diagnostics.
   colors, orientations, and image edges.
 - Run one 20-photo-plus-invalid navigator/export-result scenario. No broad or prolonged performance
   suite is part of UI validation.
+- Inspect map consent, saved-consent reopen, online indicator, attribution, offline/provider failure,
+  Retry/Close, and revocation at the narrow and desktop fixtures; confirm focus return and no
+  coordinate/provenance change.
