@@ -1,0 +1,154 @@
+# ADR 0001: Offline Photo Annotation Architecture
+
+- **Status**: Accepted
+- **Date**: 2026-08-16
+- **Decision owners**: Photo Marker project
+- **Related specification**: `specs/001-annotate-photos/spec.md`
+
+## Context
+
+Photo Marker must run as an installable offline application on a supported phone and computer. It
+imports up to 20 JPEG/PNG photos, reads or accepts coordinates, adds accessible text overlays,
+preserves a documented metadata profile, saves local drafts, and exports new images without changing
+the sources or transmitting user content. The implementation must remain small, responsive for a
+representative 12 MP photo, compatible with browser storage/update constraints, and consistent with
+the verified Taiwan coordinate behavior in the MIT-licensed `pwa_map` project.
+
+The decisions are cross-cutting: application topology, dependency strategy, renderer separation,
+persisted schema, privacy boundary, service-worker updates, metadata compatibility, performance, and
+rollback. They therefore require an ADR rather than an execution log.
+
+## Decision
+
+### 1. One client-only adaptive PWA
+
+Use one Svelte/TypeScript/Vite application with no backend, account, telemetry, or runtime CDN. The
+release-gated MVP is an installed PWA on Android 10+ current Chrome and Windows 11 current Chrome/Edge.
+The same canonical state and component hierarchy adapts across mobile and desktop; advanced browser
+APIs remain capability-detected enhancements.
+
+The manifest `id`, deployment origin, service-worker scope, and IndexedDB name are persisted public
+contracts. Changes require a migration/rollback plan because they can orphan installations or drafts.
+
+### 2. Offline shell and local-only security boundary
+
+Precache all required code, fonts, icons, coordinate data, and workers. Declare offline readiness only
+after an active current-version service worker confirms a complete atomic cache and IndexedDB opens.
+Keep the prior cache operational until the new version activates successfully.
+
+Store user photos only in memory and IndexedDB, never in Cache Storage. Bundle dependencies locally,
+use a restrictive CSP including `connect-src 'none'`, and permit diagnostics to contain only stable
+codes and non-sensitive phase timings. Application code must never put photo pixels, metadata,
+coordinates, or annotations into network requests.
+
+Web Share Target is a release-gated enhancement. Its exact POST action is intercepted by the service
+worker, never forwarded, and enabled only after a physical-device test proves zero network egress.
+The file input remains universal. Explicit geolocation may depend on OS/browser network-derived
+signals, but Photo Marker never requests it automatically, watches it, or transmits the result.
+
+### 3. Transactional IndexedDB drafts
+
+Use IndexedDB via the small typed `idb` wrapper for versioned sessions and compressed source Blobs.
+Use Cache Storage only for build assets. Request persistent storage after meaningful user action and
+handle denial, eviction, user clearing, private mode, and quota exhaustion as normal limitations.
+“Saved locally” is displayed only after transaction completion; the product promises recoverability
+under supported non-private conditions, not permanent archival.
+
+Migrations are additive and transactional. Old data is not deleted until commit, unknown newer data
+is preserved, and export/discard cleanup is transactional. OPFS is deferred unless the focused batch
+baseline demonstrates an IndexedDB bottleneck.
+
+### 4. Accessible DOM interaction plus a shared Canvas renderer
+
+Use DOM components for overlay selection, forms, errors, focus, keyboard controls, and single-pointer
+drag alternatives. Keep geometry normalized to the display-oriented image. Use one pure layout and
+text-measurement implementation for preview and export.
+
+Perform full-resolution decode/render/encode sequentially in a dedicated worker with
+`createImageBitmap` and OffscreenCanvas. Use the same renderer on the main thread if worker canvas is
+unavailable. Decode bounded previews and release graphical resources before advancing. Concurrency
+remains 1 until a later measurement and plan justify change.
+
+### 5. Explicit metadata compatibility profile
+
+Use `exifr` for bounded Blob-based GPS/orientation reads and a small bounds-checked writer for:
+
+- JPEG→JPEG: EXIF APP1, XMP APP1, IPTC APP13, and JFIF density.
+- PNG→PNG: `eXIf`, `tEXt`/`zTXt`/`iTXt`, and `pHYs`.
+
+Do not preserve ICC profiles, MPF, embedded thumbnails, unknown application segments, or invalid
+structural offsets in the MVP. Preserve capture GPS unchanged; a visible manual/current coordinate
+does not rewrite it. Format changes disclose metadata loss. If preservation cannot be completed, the
+mode is blocked until the user explicitly selects metadata removal; silent stripping is prohibited.
+
+### 6. Vendor the verified coordinate core
+
+Copy only the UI-independent TypeScript coordinate modules, result/types, and relevant test vectors
+from `pwa_map`; retain `proj4` and `mgrs` plus all MIT notices in `THIRD_PARTY_NOTICES.md`. Do not depend
+on the private source application and do not create a shared package until a second coordinated
+consumer/release need exists.
+
+Retain the verified TWD67 four-parameter zone-121 transform, surfaced TWD97 zone resolution, MGRS
+precision semantics, and mainland-only Taipower coverage. Formula or coverage changes require updated
+vectors and ADR assessment.
+
+### 7. Bounded inputs and progressive output handoff
+
+Support JPEG/PNG, 1–20 photos, at most 13 MP, 8192 px per axis, and 32 MiB compressed per file. Total
+accepted bytes are at most the lesser of 640 MiB and 80% of reported storage headroom. Validate magic
+bytes, dimensions, decodability, and untrusted segment lengths before allocation.
+
+Prefer a directly activated save picker where supported; otherwise hand off a conflict-safe Blob
+download or supported Web Share. Never overwrite a source handle. “Handed off” does not overclaim
+that the browser wrote a specific path. ZIP packaging is out of scope.
+
+## Consequences
+
+### Positive
+
+- The core workflow has no server dependency and can be verified offline.
+- One state model and renderer reduce mobile/desktop and preview/export drift.
+- Sequential processing and explicit limits bound common memory failures.
+- DOM interaction remains accessible while Canvas supplies pixel fidelity.
+- Metadata and coordinate claims are narrow, documented, and testable.
+- Vendoring reuses proven Taiwan coordinate behavior without importing a map application.
+
+### Costs and risks
+
+- Browser storage can still be evicted or cleared; the UI must keep that limitation visible.
+- Worker font/render behavior and Web Share Target require physical-device release checks.
+- Bounds-checked metadata rewriting is a security- and compatibility-sensitive implementation slice.
+- Excluding ICC may change color appearance for some sources; copying it after browser conversion could
+  be worse because it may mislabel output pixels. This limitation must be disclosed.
+- Sequential batch export favors reliability over throughput.
+- iOS/Safari and Firefox installed-app support are deferred.
+
+## Compatibility, migration, and rollback
+
+- Persisted records carry schema and record versions; migrations are additive and transactional.
+- A service-worker update activates only with a complete precache; rollback uses the prior complete
+  shell. A release may remove `share_target` without affecting file input.
+- Worker-rendering regressions fall back to the same renderer on the main thread.
+- Metadata regressions disable preservation for affected files and request explicit removal; they do
+  not silently strip or corrupt metadata.
+- Dependency versions are pinned by the lockfile. Coordinate vector regressions block upgrades of
+  `proj4`, `mgrs`, or vendored formulas.
+- Input limits or metadata-profile changes are public behavior and require specification/plan review.
+
+## Verification
+
+Use Red-Green-Refactor for behavior slices. Required focused evidence includes coordinate vectors,
+malformed metadata bounds, EXIF orientations 1–8, source SHA-256 stability, preview/export fixtures,
+draft migration/recovery, offline update rollback, Web Share Target zero egress, keyboard/touch and
+screen-reader smoke paths, five 12 MP timing runs per representative Android/Windows device, and one
+20-photo-plus-invalid reliability run per device. No soak test or broad benchmark suite is required.
+
+## Alternatives rejected
+
+- **Backend or cloud processing**: conflicts with offline/local-only requirements.
+- **Separate mobile and desktop clients**: duplicates behavior and migration work.
+- **Canvas-only editor**: cannot reliably provide the required accessible interaction surface.
+- **WASM imaging stack initially**: adds runtime, isolation, and attack surface before a measured need.
+- **OPFS plus IndexedDB initially**: adds cross-store migration/orphan complexity without evidence.
+- **Direct dependency on `pwa_map`**: it is a private map application without a stable library API.
+- **Immediate shared coordinate package**: premature without a second coordinated package consumer.

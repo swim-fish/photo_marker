@@ -11,6 +11,22 @@ desktop. Users import or share photos, use embedded GPS or manual coordinates, a
 configurable text boxes, preview the result, and save a new annotated image without changing the
 original. Coordinate conversion behavior should be consistent with the pwa_map reference project."
 
+## Clarifications
+
+### Session 2026-08-16
+
+- Q: Which coordinate formats should manual coordinate entry accept? → A: All supported formats:
+  WGS84 DD/DMS, TWD97, TWD67, MGRS, and Taipower.
+- Q: What should the default source-metadata behavior be when exporting an annotated photo? → A:
+  Preserve all supported source metadata by default and allow the user to remove it.
+- Q: What should happen to an unexported editing session after reload or reopening the app? → A:
+  Automatically save a local draft, restore it, and retain it until successful export or explicit
+  discard.
+- Q: How should the default export format, dimensions, and quality be selected? → A: Preserve the
+  source format and pixel dimensions when supported, with user-adjustable format or quality.
+- Q: Should a user be able to select the device's current location when EXIF GPS is unavailable? →
+  A: Yes, only after explicit user action, with provenance permanently labeled `CURRENT GPS`.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Annotate and Export One Photo (Priority: P1)
@@ -32,15 +48,24 @@ unchanged.
    **Then** the application presents that coordinate as the default candidate and identifies its
    source as capture metadata.
 2. **Given** a photo without valid embedded GPS data, **When** the user imports it, **Then** the
-   application reports that no capture coordinate is available and offers manual coordinate entry
-   without inserting the device's current location.
-3. **Given** a valid coordinate and one or more configured text boxes, **When** the user previews the
+   application reports that no capture coordinate is available and offers manual entry or an
+   explicit action to use the device's current location without assigning either automatically.
+3. **Given** the user explicitly chooses the device's current location and grants permission,
+   **When** a valid location is obtained, **Then** the application uses it as the working coordinate
+   and identifies its provenance as `CURRENT GPS`, never as capture metadata.
+4. **Given** a valid coordinate and one or more configured text boxes, **When** the user previews the
    photo, **Then** every visible overlay reflects the selected content, size, position, text color,
    and background color.
-4. **Given** a completed preview, **When** the user exports the photo, **Then** a separate annotated
+5. **Given** a completed preview, **When** the user exports the photo, **Then** a separate annotated
    image is saved and the original photo remains byte-for-byte unchanged.
-5. **Given** the user cancels before confirming export, **When** the editing session closes, **Then**
+6. **Given** the user cancels before confirming export, **When** the editing session closes, **Then**
    no output is created and the original remains unchanged.
+7. **Given** the user has not changed the metadata option, **When** the user exports the photo,
+   **Then** supported source metadata is preserved without changing its values; selecting metadata
+   removal excludes it from the new output.
+8. **Given** the source format is supported for export, **When** the user keeps the default export
+   settings, **Then** the new image uses the source format and pixel dimensions; the user may choose
+   a different supported format or quality before confirming export.
 
 ---
 
@@ -70,6 +95,9 @@ visible throughout editing and export.
    location and preserves the valid underlying WGS84 coordinate.
 4. **Given** a manually entered coordinate, **When** the user exports the photo, **Then** the visible
    coordinate is identified as manual and is not represented as the photo's original capture GPS.
+5. **Given** a valid manual coordinate in any supported coordinate format, **When** the user submits
+   it, **Then** the application accepts it, identifies the entered format, and normalizes it to the
+   canonical working location without losing source provenance.
 
 ---
 
@@ -98,6 +126,10 @@ photo successfully on each environment.
 4. **Given** a supported platform that cannot receive photos from its system share surface, **When**
    the user opens the application, **Then** the user can import the same photos through the in-app
    selection flow.
+5. **Given** an unexported editing session, **When** the application reloads or is reopened on the
+   same device, **Then** the application restores the locally saved draft.
+6. **Given** an active or restored draft, **When** export succeeds or the user explicitly discards
+   it, **Then** the draft is no longer available for restoration.
 
 ---
 
@@ -130,6 +162,8 @@ and verify an explicit result for every item.
 ### Edge Cases
 
 - A photo contains missing, malformed, out-of-range, or zero-valued GPS metadata.
+- Device-location permission is denied, the position is unavailable, or the reported accuracy is
+  insufficient for the user to accept it.
 - A photo's orientation metadata differs from its stored pixel orientation.
 - A manual coordinate is incomplete, outside valid latitude or longitude bounds, ambiguous between
   TM2 zones, or incompatible with the selected coordinate format.
@@ -169,13 +203,17 @@ and verify an explicit result for every item.
 - **FR-008**: The application MUST interpret photo orientation consistently so preview and export do
   not unexpectedly rotate or mirror the image.
 - **FR-009**: The application MUST read valid embedded capture GPS when present and MUST distinguish
-  it from manually entered coordinates.
-- **FR-010**: Users MUST be able to enter or replace a photo's working coordinate manually using a
-  validated coordinate input.
-- **FR-011**: The application MUST NOT automatically substitute the processing device's current
-  location when capture GPS is missing or invalid.
+  it from current-device and manually entered coordinates.
+- **FR-010**: Users MUST be able to enter or replace a photo's working coordinate manually using
+  WGS84 decimal degrees, WGS84 degrees-minutes-seconds, TWD97 TM2, TWD67 TM2, MGRS, or supported
+  Taipower input, subject to each format's zone, precision, and coverage validation.
+- **FR-011**: The application MUST allow the user to request the processing device's current location
+  through an explicit action, MUST obtain permission before access, MUST label an accepted result as
+  `CURRENT GPS`, and MUST NOT request or assign it automatically when capture GPS is missing or
+  invalid.
 - **FR-012**: The application MUST retain coordinate provenance throughout the editing session and
-  MUST label visible or exported coordinates as capture metadata or manual input as applicable.
+  MUST label visible or exported coordinates as capture metadata, `CURRENT GPS`, or manual input as
+  applicable.
 - **FR-013**: The application MUST support display of WGS84 decimal degrees, WGS84
   degrees-minutes-seconds, TWD97 TM2 zones 119 and 121, TWD67 TM2 zone 121, MGRS precision levels 1
   through 5, and supported mainland Taipower formats.
@@ -192,8 +230,8 @@ and verify an explicit result for every item.
   keyboard input on supported mobile and desktop viewport sizes.
 - **FR-019**: The application MUST provide a preview that represents the exported image's crop,
   orientation, overlay content, relative position, color, and size.
-- **FR-020**: Before export, users MUST be able to choose whether source metadata is preserved or
-  removed from the new image; changing the visible coordinate MUST NOT silently rewrite capture GPS
+- **FR-020**: Export MUST preserve all supported source metadata by default and MUST allow users to
+  remove it before export; changing the visible coordinate MUST NOT silently rewrite capture GPS
   metadata.
 - **FR-021**: Export MUST use a conflict-safe output name or obtain explicit confirmation before
   replacing an existing output file.
@@ -208,30 +246,37 @@ and verify an explicit result for every item.
 - **FR-026**: User-entered annotation text MUST preserve Unicode content in preview and export.
 - **FR-027**: Closing or canceling an unfinished session MUST NOT modify source photos or create an
   output without explicit export confirmation.
+- **FR-028**: The application MUST automatically save each unexported editing session as a local-only
+  draft, MUST restore it after reload or reopening on the same device, and MUST remove the draft
+  after successful export or explicit user discard.
+- **FR-029**: Export MUST preserve the source photo's format and pixel dimensions by default when
+  that format is supported for output, MUST allow the user to select another supported format or
+  quality, and MUST disclose any required fallback before export confirmation.
 
 ### Key Entities
 
 - **Source Photo**: An immutable user-selected photo, including its file identity, pixel dimensions,
   orientation, supported-format status, and optional source metadata.
-- **Editing Session**: The temporary working state for one or more source photos, selected settings,
-  review status, and unsaved changes.
-- **Coordinate Record**: The working WGS84 location, its provenance, validity, selected display
-  format, precision, applicable zone, and coverage status.
+- **Editing Session**: The local draft state for one or more source photos, selected settings, review
+  status, and unsaved changes; it persists until successful export or explicit discard.
+- **Coordinate Record**: The working WGS84 location, its capture-metadata, `CURRENT GPS`, or manual
+  provenance, validity, selected display format, precision, applicable zone, and coverage status.
 - **Text Overlay**: User-visible annotation content with a semantic role, relative position, size,
   text color, background color, ordering, and removal state.
-- **Export Configuration**: Output naming and format choices plus the user's metadata-retention
-  choice.
+- **Export Configuration**: Output naming, format, pixel dimensions, quality, required fallback, and
+  the user's metadata-retention choice.
 - **Export Result**: The per-photo success, omission, cancellation, or failure outcome and any saved
   output identity.
 
 ### Scope Boundaries
 
-- The feature includes photo selection, supported platform share intake, GPS extraction, manual
-  coordinate entry, coordinate formatting, text annotation, preview, local export, and batch status.
+- The feature includes photo selection, supported platform share intake, GPS extraction, explicit
+  current-device location selection, manual coordinate entry, coordinate formatting, text
+  annotation, preview, local export, and batch status.
 - The feature does not include map browsing, map tiles, route planning, cloud upload, account sync,
   collaborative editing, video annotation, general-purpose photo filters, or destructive editing.
-- Capturing the processing device's current location is excluded from the initial scope to prevent
-  accidental attribution of processing location as capture location.
+- Background location access, automatic current-location substitution, and representing processing
+  location as capture metadata are excluded from the initial scope.
 - Platform-specific native sharing behavior is required only where the supported environment makes
   it available; the in-app import flow is the universal fallback.
 
@@ -259,17 +304,22 @@ and verify an explicit result for every item.
   input, with no blocking overlap at the minimum supported mobile and desktop viewport sizes.
 - **SC-009**: No photo, coordinate, metadata, or annotation content is transmitted during the core
   workflow in offline and connected verification scenarios.
+- **SC-010**: In 100% of approved recovery tests, an unexported local draft is restored after reload
+  or reopening, and no restorable draft remains after successful export or explicit discard.
+- **SC-011**: In 100% of permission and missing-EXIF scenarios, current-device location is neither
+  requested nor assigned without explicit user action, and every accepted result is labeled
+  `CURRENT GPS`.
 
 ## Assumptions
 
 - The first release targets personal or field-work use without accounts, cloud storage, or server
   processing.
-- JPEG and PNG are the minimum required input formats. Additional formats may be added only when the
-  supported-platform matrix can decode and export them consistently.
+- JPEG and PNG are the minimum required input and output formats. Additional formats may be added
+  only when the supported-platform matrix can decode and export them consistently.
 - Source metadata is preserved by default in the exported copy unless the user chooses removal;
   manual visible coordinates do not alter capture GPS metadata.
-- WGS84 is the canonical working location. Other displayed coordinate formats are derived from that
-  location.
+- WGS84 is the canonical working location. Manual inputs in other supported formats are normalized
+  to WGS84, and other displayed coordinate formats are derived from that location.
 - Coordinate format definitions, tolerances, test vectors, and known limitations are based on the
   MIT-licensed pwa_map reference project's approved coordinate artifacts. Reuse must retain required
   licence and attribution notices.
