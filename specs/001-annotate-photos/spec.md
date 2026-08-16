@@ -26,6 +26,25 @@ original. Coordinate conversion behavior should be consistent with the pwa_map r
   source format and pixel dimensions when supported, with user-adjustable format or quality.
 - Q: Should a user be able to select the device's current location when EXIF GPS is unavailable? →
   A: Yes, only after explicit user action, with provenance permanently labeled `CURRENT GPS`.
+- Q: How should export handle pixel dimensions and EXIF orientation? → A: For same-format export
+  with metadata preservation, retain the source's raw encoded dimensions and orientation metadata
+  and map overlays into the raw pixel orientation; when changing format or removing metadata, bake
+  orientation into the pixels and disclose any dimension or orientation normalization.
+- Q: What happens if Android Web Share Target fails physical-device zero-egress validation? → A:
+  Block the Android supported release until the failure is corrected, or formally revise the
+  supported-platform matrix; in-app file selection alone does not satisfy installed-app sharing.
+- Q: Does the no-transmission requirement include network activity performed internally by the
+  browser or operating-system location provider? → A: It applies to application-controlled traffic:
+  Photo Marker must not transmit user content or accepted location results, while platform location
+  services may use implementation-specific network signals outside the application's control and
+  verification boundary.
+- Q: Should the first release include a geographic map preview? → A: Yes, as an explicit opt-in
+  online feature using NLSC `EMAP5` as the default basemap. It is not part of the core offline
+  workflow, must make no tile request before disclosure and consent, and must leave editing usable
+  when declined, offline, or unavailable.
+- Q: How long should online map-preview consent remain valid? → A: Persist it locally for the same
+  device and application origin until the user revokes it; show an online indicator whenever the map
+  is open, and require new consent after revocation.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -64,8 +83,10 @@ unchanged.
    **Then** supported source metadata is preserved without changing its values; selecting metadata
    removal excludes it from the new output.
 8. **Given** the source format is supported for export, **When** the user keeps the default export
-   settings, **Then** the new image uses the source format and pixel dimensions; the user may choose
-   a different supported format or quality before confirming export.
+   settings and preserves metadata, **Then** the new image uses the source format, raw encoded pixel
+   dimensions, and source orientation metadata without unexpected rotation; changing format or
+   removing metadata may normalize orientation and dimensions only after disclosure, and the user
+   may choose a different supported format or quality before confirming export.
 
 ---
 
@@ -98,6 +119,16 @@ visible throughout editing and export.
 5. **Given** a valid manual coordinate in any supported coordinate format, **When** the user submits
    it, **Then** the application accepts it, identifies the entered format, and normalizes it to the
    canonical working location without losing source provenance.
+6. **Given** a valid working coordinate, **When** the user explicitly opens the online map preview
+   and accepts its network disclosure, **Then** the application centers the default NLSC `EMAP5`
+   basemap on that coordinate without changing the coordinate or its provenance.
+7. **Given** the user declines online map access, the device is offline, or the map service is
+   unavailable, **When** the user returns to coordinate editing, **Then** the valid coordinate and
+   every non-map workflow remain available without a fabricated map result.
+8. **Given** the user previously consented on the same device and application origin, **When** the
+   user opens map preview again, **Then** the application may load `EMAP5` without repeating the
+   disclosure, shows a persistent online indicator while the map is open, and provides a way to
+   revoke consent; after revocation, no new map request occurs until consent is granted again.
 
 ---
 
@@ -130,6 +161,10 @@ photo successfully on each environment.
    same device, **Then** the application restores the locally saved draft.
 6. **Given** an active or restored draft, **When** export succeeds or the user explicitly discards
    it, **Then** the draft is no longer available for restoration.
+7. **Given** Android Chrome is classified as a supported installed-PWA environment, **When** the
+   release is validated, **Then** Web Share Target accepts one or more photos through the common
+   import workflow with zero application-controlled network egress; a failed gate blocks that
+   supported release or requires an approved supported-matrix revision.
 
 ---
 
@@ -164,7 +199,8 @@ and verify an explicit result for every item.
 - A photo contains missing, malformed, out-of-range, or zero-valued GPS metadata.
 - Device-location permission is denied, the position is unavailable, or the reported accuracy is
   insufficient for the user to accept it.
-- A photo's orientation metadata differs from its stored pixel orientation.
+- A photo's orientation metadata differs from its stored pixel orientation, including values that
+  swap the displayed width and height relative to the raw encoded dimensions.
 - A manual coordinate is incomplete, outside valid latitude or longitude bounds, ambiguous between
   TM2 zones, or incompatible with the selected coordinate format.
 - A Taipower coordinate falls in an unsupported letter cell or outer-island coverage area.
@@ -179,6 +215,11 @@ and verify an explicit result for every item.
   or the save operation is canceled.
 - Connectivity disappears before offline readiness is established or while no remote transmission
   should be occurring.
+- The user opens online map preview while offline, declines its disclosure, or the NLSC `EMAP5`
+  service is unavailable, slow, rate-limited, or returns an error.
+- The user revokes saved map-network consent while a preview is open or before reopening it.
+- Web Share Target interception is unavailable, forwards a request, or otherwise fails its
+  physical-device zero-egress release gate.
 - A batch contains duplicate photos, mixed dimensions and orientations, or a partial export failure.
 
 ## Requirements *(mandatory)*
@@ -193,15 +234,27 @@ and verify an explicit result for every item.
 - **FR-003**: After offline readiness is confirmed, the application MUST perform photo import,
   coordinate handling, annotation, preview, and export without network access.
 - **FR-004**: The application MUST process photo pixels, metadata, coordinates, and annotation
-  content locally by default and MUST NOT transmit them over a network as part of the core workflow.
+  content locally and MUST NOT place them in any application-controlled network request as part of
+  the core workflow. Browser or operating-system services may use implementation-specific network
+  signals to obtain an explicitly requested device location, but the application MUST NOT transmit
+  the accepted location result and MUST disclose that platform activity is outside its control and
+  verification boundary. The separately initiated online map preview is outside the core workflow
+  and may request map tiles only after the disclosure and consent required by FR-030.
 - **FR-005**: Users MUST be able to select one or more supported photos from within the application.
 - **FR-006**: On supported platforms that expose an installed-app share flow, users MUST be able to
   send one or more photos into the same import workflow; in-app selection MUST remain available as a
-  fallback.
+  fallback but MUST NOT substitute for installed-app sharing when classifying such a platform as
+  supported. Android Chrome support MUST be release-blocked unless physical-device validation proves
+  that Web Share Target handles one and multiple photos without application-controlled network
+  egress; alternatively, the supported-platform matrix MUST be revised through an approved
+  specification change.
 - **FR-007**: The application MUST preserve each source photo without modification and MUST create a
   separate output for every completed export.
 - **FR-008**: The application MUST interpret photo orientation consistently so preview and export do
-  not unexpectedly rotate or mirror the image.
+  not unexpectedly rotate or mirror the image. Same-format export with metadata preservation MUST
+  retain the source's raw encoded dimensions and orientation metadata while mapping annotations into
+  the raw pixel orientation; a format change or metadata removal MUST bake orientation into the
+  output pixels and disclose any resulting dimension or orientation normalization.
 - **FR-009**: The application MUST read valid embedded capture GPS when present and MUST distinguish
   it from current-device and manually entered coordinates.
 - **FR-010**: Users MUST be able to enter or replace a photo's working coordinate manually using
@@ -230,8 +283,9 @@ and verify an explicit result for every item.
   keyboard input on supported mobile and desktop viewport sizes.
 - **FR-019**: The application MUST provide a preview that represents the exported image's crop,
   orientation, overlay content, relative position, color, and size.
-- **FR-020**: Export MUST preserve all supported source metadata by default and MUST allow users to
-  remove it before export; changing the visible coordinate MUST NOT silently rewrite capture GPS
+- **FR-020**: Export MUST preserve all supported source metadata by default, including source
+  orientation for same-format metadata-preserving output, and MUST allow users to remove supported
+  metadata before export; changing the visible coordinate MUST NOT silently rewrite capture GPS
   metadata.
 - **FR-021**: Export MUST use a conflict-safe output name or obtain explicit confirmation before
   replacing an existing output file.
@@ -249,9 +303,22 @@ and verify an explicit result for every item.
 - **FR-028**: The application MUST automatically save each unexported editing session as a local-only
   draft, MUST restore it after reload or reopening on the same device, and MUST remove the draft
   after successful export or explicit user discard.
-- **FR-029**: Export MUST preserve the source photo's format and pixel dimensions by default when
-  that format is supported for output, MUST allow the user to select another supported format or
-  quality, and MUST disclose any required fallback before export confirmation.
+- **FR-029**: Export MUST preserve the source photo's format and raw encoded pixel dimensions by
+  default when that format and metadata preservation are supported, MUST allow the user to select
+  another supported format or quality, and MUST disclose any required format, dimension,
+  orientation, metadata, or quality fallback before export confirmation.
+- **FR-030**: The application MUST offer an optional online map preview for a valid working
+  coordinate, MUST use NLSC `EMAP5` as the default basemap, MUST disclose before activation that map
+  requests reveal the viewed geographic area and ordinary network information to the map service,
+  MUST obtain explicit user consent before the first request, and MUST NOT load map resources during
+  startup, import, coordinate entry, draft restoration, or any other non-map workflow.
+- **FR-031**: Online map preview MUST NOT change coordinate values or provenance, MUST remain
+  non-essential to import, editing, offline use, and export, and MUST return an explicit unavailable
+  state without losing work when consent is declined, the device is offline, or the service fails.
+- **FR-032**: Map-network consent MUST be stored locally for the same device and application origin,
+  MUST remain independent of photo and draft content, MUST be revocable through the interface, and
+  MUST be accompanied by a visible online indicator whenever map preview is open. Revocation MUST
+  prevent every subsequent map-resource request and MUST require new consent before another preview.
 
 ### Key Entities
 
@@ -267,18 +334,24 @@ and verify an explicit result for every item.
   the user's metadata-retention choice.
 - **Export Result**: The per-photo success, omission, cancellation, or failure outcome and any saved
   output identity.
+- **Map Network Consent**: A local, origin-scoped preference recording whether the user accepted the
+  online map disclosure; it contains no photo, coordinate, or annotation content and persists until
+  revocation.
 
 ### Scope Boundaries
 
 - The feature includes photo selection, supported platform share intake, GPS extraction, explicit
   current-device location selection, manual coordinate entry, coordinate formatting, text
-  annotation, preview, local export, and batch status.
-- The feature does not include map browsing, map tiles, route planning, cloud upload, account sync,
-  collaborative editing, video annotation, general-purpose photo filters, or destructive editing.
+  annotation, photo preview, an explicitly initiated online coordinate map preview, local export,
+  and batch status.
+- The feature does not include general-purpose map browsing, offline map packages, basemap switching,
+  route planning, cloud upload, account sync, collaborative editing, video annotation,
+  general-purpose photo filters, or destructive editing.
 - Background location access, automatic current-location substitution, and representing processing
   location as capture metadata are excluded from the initial scope.
 - Platform-specific native sharing behavior is required only where the supported environment makes
-  it available; the in-app import flow is the universal fallback.
+  it available; the in-app import flow is the universal fallback for environments outside that
+  capability, but it does not satisfy the Android supported-release Web Share Target gate.
 
 ## Success Criteria *(mandatory)*
 
@@ -302,22 +375,37 @@ and verify an explicit result for every item.
   reviewed and exported, and the invalid item receives an explicit failure result without data loss.
 - **SC-008**: All primary workflow controls can be completed using touch and using keyboard-only
   input, with no blocking overlap at the minimum supported mobile and desktop viewport sizes.
-- **SC-009**: No photo, coordinate, metadata, or annotation content is transmitted during the core
-  workflow in offline and connected verification scenarios.
+- **SC-009**: No application-controlled network request transmits photo, coordinate, metadata, or
+  annotation content during the core workflow in offline and connected verification scenarios;
+  browser or operating-system location-provider activity and the explicitly consented online map
+  preview are outside this assertion.
 - **SC-010**: In 100% of approved recovery tests, an unexported local draft is restored after reload
   or reopening, and no restorable draft remains after successful export or explicit discard.
 - **SC-011**: In 100% of permission and missing-EXIF scenarios, current-device location is neither
   requested nor assigned without explicit user action, and every accepted result is labeled
   `CURRENT GPS`.
+- **SC-012**: In connected and offline verification, the application makes zero map-resource
+  requests before explicit map-preview consent; after consent it requests only the documented map
+  resources needed for the current preview, and decline, offline use, or service failure leaves the
+  working coordinate and every core workflow available. After consent is revoked, zero subsequent
+  map-resource requests occur until the user grants consent again.
 
 ## Assumptions
 
 - The first release targets personal or field-work use without accounts, cloud storage, or server
   processing.
+- The application can verify only its own requests and data flows; it cannot verify whether the
+  browser or operating system uses network-derived signals for an explicitly requested location.
+- NLSC `EMAP5` availability, access terms, and service limits are external dependencies that MUST be
+  confirmed during planning; map preview remains optional and unavailable offline.
+- Map-network consent is an origin-scoped local preference rather than draft or photo data and
+  persists on the same device until the user revokes it or clears site data.
 - JPEG and PNG are the minimum required input and output formats. Additional formats may be added
   only when the supported-platform matrix can decode and export them consistently.
 - Source metadata is preserved by default in the exported copy unless the user chooses removal;
   manual visible coordinates do not alter capture GPS metadata.
+- Same-format metadata-preserving export retains raw encoded dimensions and source orientation;
+  format changes or metadata removal produce visually upright pixels and disclose normalization.
 - WGS84 is the canonical working location. Manual inputs in other supported formats are normalized
   to WGS84, and other displayed coordinate formats are derived from that location.
 - Coordinate format definitions, tolerances, test vectors, and known limitations are based on the
@@ -330,3 +418,5 @@ and verify an explicit result for every item.
 - The supported-platform matrix and representative verification devices will be selected during
   planning. Performance verification will use the focused scenarios in SC-005 and SC-007 rather
   than an exhaustive long-running benchmark suite.
+- Android Chrome may be classified as supported only after its Web Share Target zero-egress gate
+  passes; failure requires correction or an approved supported-matrix revision before release.
