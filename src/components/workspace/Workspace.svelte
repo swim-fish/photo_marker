@@ -12,9 +12,17 @@
   import MapPreview from '../map/MapPreview.svelte';
   import OverlayInspector from '../overlays/OverlayInspector.svelte';
   import OverlayList from '../overlays/OverlayList.svelte';
+  import CornerPicker from '../overlays/CornerPicker.svelte';
+  import CoordinateOverlayOptions, {
+    type CoordinateSelectionMode,
+  } from '../overlays/CoordinateOverlayOptions.svelte';
   import DraftRecovery from './DraftRecovery.svelte';
   import DraftStatus from './DraftStatus.svelte';
-  import type { CoordinateRecord, Wgs84Coordinate } from '../../domain/coordinates/types';
+  import type {
+    CoordinateDisplayFormat,
+    CoordinateRecord,
+    Wgs84Coordinate,
+  } from '../../domain/coordinates/types';
   import { formatCoordinate } from '../../domain/coordinates/formatCoordinate';
   import type { ParsedCoordinate } from '../../domain/coordinates/parseCoordinateInput';
   import { replaceWorkingCoordinate } from '../../domain/coordinates/workingCoordinate';
@@ -45,7 +53,8 @@
     updateOverlay,
   } from '../../domain/overlays/overlayEditor';
   import { formatCoordinateOverlay } from '../../domain/overlays/coordinateOverlay';
-  import type { OverlayRole, TextOverlay } from '../../domain/overlays/types';
+  import { findCornerPlacement, overlapsAny } from '../../domain/overlays/placement';
+  import type { OverlayCorner, OverlayRole, TextOverlay } from '../../domain/overlays/types';
   import { importPhoto } from '../../domain/photos/importPhoto';
   import {
     applySharedBatchSettings,
@@ -81,20 +90,24 @@
   import PhotoStatus from './PhotoStatus.svelte';
   import PreviewStage from './PreviewStage.svelte';
   import StatusRegion from './StatusRegion.svelte';
+  import StepNavigation, { type EditingStep } from './StepNavigation.svelte';
 
   const t = messages.en;
 
   type ViewState = 'empty' | 'loading' | 'error' | 'editing' | 'exporting' | 'success';
-  type InspectorTab = 'coordinate' | 'overlays' | 'export';
   type DraftUiStatus = 'idle' | 'saving' | 'saved' | 'denied' | 'quotaExceeded' | 'error';
 
   let viewState = $state<ViewState>('empty');
-  let inspectorTab = $state<InspectorTab>('coordinate');
+  let activeStep = $state<EditingStep>('photo');
   let photo = $state<SourcePhoto | null>(null);
   let photoUrl = $state('');
   let coordinate = $state<CoordinateRecord | null>(null);
   let overlays = $state<TextOverlay[]>([]);
   let selectedOverlayId = $state<string | null>(null);
+  let coordinateSelectionMode = $state<CoordinateSelectionMode>('single');
+  let coordinateFormats = $state<CoordinateDisplayFormat[]>([]);
+  let coordinateCorner = $state<OverlayCorner>('bottom-left');
+  let textCorner = $state<OverlayCorner>('top-right');
   let configuration = $state<ExportConfiguration | null>(null);
   let errorMessage = $state('');
   let locationError = $state('');
@@ -149,6 +162,7 @@
   const selectedOverlay = $derived(
     overlays.find((overlay) => overlay.id === selectedOverlayId) ?? null,
   );
+  const textOverlays = $derived(overlays.filter((overlay) => overlay.role !== 'coordinate'));
   const coordinateReady = $derived(coordinate?.validationStatus === 'valid');
   const overlaysReady = $derived(overlays.length > 0);
   const configurationReady = $derived(
@@ -207,6 +221,13 @@
       };
     });
   });
+
+  function changeStep(step: EditingStep): void {
+    activeStep = step;
+    if (step === 'text' && selectedOverlay?.role === 'coordinate') {
+      selectedOverlayId = textOverlays[0]?.id ?? null;
+    }
+  }
   const batchReviewItems = $derived(
     batchNavigatorItems.map((item) => {
       const source = batchSession?.items.find((candidate) => candidate.id === item.id);
@@ -463,43 +484,81 @@
     return result.ok ? result.value : null;
   }
 
-  function coordinateText(value: CoordinateRecord): string {
+  function coordinateText(
+    value: CoordinateRecord,
+    displayFormat: CoordinateDisplayFormat = value.displayFormat,
+  ): string {
     const label =
       value.provenance === 'CAPTURE_METADATA'
         ? t.captureMetadata
         : value.provenance === 'CURRENT_GPS'
           ? t.currentGps
           : t.manualInput;
-    return formatCoordinateOverlay(value, label);
+    return formatCoordinateOverlay(value, label, displayFormat);
   }
 
-  function syncCoordinateOverlay(value: CoordinateRecord): void {
-    const existing = overlays.find((overlay) => overlay.role === 'coordinate');
-    if (existing) {
-      overlays = overlays.map((overlay) =>
-        overlay.id === existing.id
-          ? updateOverlay(overlay, { content: coordinateText(value) })
-          : overlay,
-      );
-      return;
+  function syncCoordinateOverlays(
+    value: CoordinateRecord,
+    formats = coordinateFormats.length > 0 ? coordinateFormats : [value.displayFormat],
+    corner = coordinateCorner,
+  ): boolean {
+    if (
+      formats.some(
+        (format) =>
+          !formatCoordinate(value, format, {
+            zone: value.zone,
+            precision: value.precision,
+          }).ok,
+      )
+    ) {
+      manualError = t.displayFormatUnavailable;
+      return false;
     }
-    const overlay = createOverlay({
-      id: nextId('overlay'),
-      photoId: value.photoId,
-      role: 'coordinate',
-      content: coordinateText(value),
-      fontFamily: 'Noto Sans TC',
-      fontSize: 0.035,
-      textColor: '#ffffff',
-      backgroundColor: '#111827',
-      x: 0.04,
-      y: 0.84,
-      width: 0.72,
-      height: 0.11,
-      order: overlays.length,
-    });
-    overlays = [...overlays, overlay];
-    selectedOverlayId = overlay.id;
+
+    const nonCoordinate = overlays.filter((overlay) => overlay.role !== 'coordinate');
+    const existingByFormat: Partial<Record<CoordinateDisplayFormat, TextOverlay>> = {};
+    for (const overlay of overlays.filter((item) => item.role === 'coordinate')) {
+      existingByFormat[overlay.coordinateFormat ?? value.displayFormat] = overlay;
+    }
+    const placed: TextOverlay[] = [];
+    for (const format of formats) {
+      const existing = existingByFormat[format];
+      const candidate = existing ?? {
+        x: 0,
+        y: 0,
+        width: 0.44,
+        height: 0.075,
+      };
+      const placement = findCornerPlacement(candidate, [...nonCoordinate, ...placed], corner);
+      if (!placement) {
+        statusMessage = t.overlayPlacementUnavailable;
+        return false;
+      }
+      placed.push(
+        createOverlay({
+          ...(existing ?? {
+            id: nextId('overlay'),
+            photoId: value.photoId,
+            role: 'coordinate' as const,
+            fontFamily: 'Noto Sans TC',
+            fontSize: 0.032,
+            textColor: '#ffffff',
+            backgroundColor: '#111827',
+            order: nonCoordinate.length + placed.length,
+          }),
+          ...placement,
+          content: coordinateText(value, format),
+          coordinateFormat: format,
+          placementCorner: corner,
+        }),
+      );
+    }
+    overlays = [...nonCoordinate, ...placed].map((overlay, order) => ({ ...overlay, order }));
+    if (selectedOverlayId && !overlays.some((overlay) => overlay.id === selectedOverlayId)) {
+      selectedOverlayId = placed[0]?.id ?? nonCoordinate[0]?.id ?? null;
+    }
+    manualError = '';
+    return true;
   }
 
   function coordinateOverlayFor(value: CoordinateRecord, order = 0): TextOverlay {
@@ -507,16 +566,18 @@
       id: nextId('overlay'),
       photoId: value.photoId,
       role: 'coordinate',
-      content: coordinateText(value),
+      content: coordinateText(value, value.displayFormat),
       fontFamily: 'Noto Sans TC',
-      fontSize: 0.035,
+      fontSize: 0.032,
       textColor: '#ffffff',
       backgroundColor: '#111827',
-      x: 0.04,
-      y: 0.84,
-      width: 0.72,
-      height: 0.11,
+      x: 0.03,
+      y: 0.895,
+      width: 0.44,
+      height: 0.075,
       order,
+      coordinateFormat: value.displayFormat,
+      placementCorner: 'bottom-left',
     });
   }
 
@@ -633,10 +694,22 @@
     coordinate = item.coordinate;
     overlays = [...item.overlays];
     selectedOverlayId = overlays[0]?.id ?? null;
+    const coordinateOverlays = overlays.filter((overlay) => overlay.role === 'coordinate');
+    coordinateFormats = [
+      ...new Set(
+        coordinateOverlays.map(
+          (overlay) => overlay.coordinateFormat ?? item.coordinate?.displayFormat ?? 'WGS84_DD',
+        ),
+      ),
+    ];
+    coordinateSelectionMode = coordinateFormats.length > 1 ? 'multiple' : 'single';
+    coordinateCorner = coordinateOverlays[0]?.placementCorner ?? 'bottom-left';
+    textCorner =
+      overlays.find((overlay) => overlay.role !== 'coordinate')?.placementCorner ?? 'top-right';
     configuration = item.configuration;
     manualError = '';
     locationError = '';
-    inspectorTab = 'coordinate';
+    activeStep = 'coordinate';
     if (draftSession) {
       draftSession = editingSessionReducer(draftSession, {
         type: 'set-active-photo',
@@ -671,7 +744,7 @@
     loadBatchItem(restoredBatch.activeItemId, false);
     draftStatus = 'saved';
     viewState = 'editing';
-    inspectorTab = 'coordinate';
+    activeStep = 'coordinate';
     draftRecoveryOpen = false;
     statusMessage = t.localDraftRestored;
   }
@@ -707,8 +780,10 @@
       return;
     }
     coordinate = result.value;
+    const nextFormats =
+      coordinateFormats.length > 0 ? coordinateFormats : [result.value.displayFormat];
     manualError = '';
-    syncCoordinateOverlay(result.value);
+    if (syncCoordinateOverlays(result.value, nextFormats)) coordinateFormats = nextFormats;
     statusMessage = t.manualWorkingCoordinateAccepted;
     scheduleCurrentDraft();
   }
@@ -726,7 +801,8 @@
       manualError = t.displayFormatUnavailable;
       return;
     }
-    coordinate = {
+    const previousDisplayFormat = coordinate.displayFormat;
+    const nextCoordinate = {
       ...coordinate,
       displayFormat: selection.format,
       zone: coordinate.zoneAutoResolved ? coordinate.zone : result.value.zone,
@@ -734,8 +810,20 @@
       precision: result.value.precision,
       coverageStatus: result.value.coverageStatus,
     };
+    const nextFormats =
+      coordinateSelectionMode === 'single'
+        ? [selection.format]
+        : [
+            ...new Set(
+              (coordinateFormats.length > 0 ? coordinateFormats : [previousDisplayFormat]).map(
+                (format) => (format === previousDisplayFormat ? selection.format : format),
+              ),
+            ),
+          ];
+    if (!syncCoordinateOverlays(nextCoordinate, nextFormats)) return;
+    coordinate = nextCoordinate;
+    coordinateFormats = nextFormats;
     manualError = '';
-    syncCoordinateOverlay(coordinate);
     statusMessage = t.displayFormatUpdated;
     scheduleCurrentDraft();
   }
@@ -780,7 +868,9 @@
       return;
     }
     coordinate = result.value;
-    syncCoordinateOverlay(result.value);
+    const nextFormats =
+      coordinateFormats.length > 0 ? coordinateFormats : [result.value.displayFormat];
+    if (syncCoordinateOverlays(result.value, nextFormats)) coordinateFormats = nextFormats;
     statusMessage = `${t.currentGps} accepted with ${result.value.accuracyMeters} ${t.metresSuffix} ${t.currentGpsAccuracySuffix}`;
     scheduleCurrentDraft();
   }
@@ -793,7 +883,7 @@
       coordinate: coordinate ? coordinateText(coordinate) : t.coordinate,
       freeform: t.addYourNote,
     };
-    const overlay = createOverlay({
+    const draft = createOverlay({
       id: nextId('overlay'),
       photoId: photo.id,
       role,
@@ -802,55 +892,135 @@
       fontSize: role === 'title' ? 0.06 : 0.04,
       textColor: '#ffffff',
       backgroundColor: '#111827',
-      x: 0.08,
-      y: 0.08 + overlays.length * 0.12,
-      width: role === 'title' ? 0.6 : 0.5,
+      x: 0,
+      y: 0,
+      width: 0.44,
       height: 0.1,
       order: overlays.length,
+      placementCorner: textCorner,
     });
+    const placement = findCornerPlacement(draft, overlays, textCorner);
+    if (!placement) {
+      statusMessage = t.overlayPlacementUnavailable;
+      return;
+    }
+    const overlay = updateOverlay(draft, placement);
     overlays = [...overlays, overlay];
     selectedOverlayId = overlay.id;
-    inspectorTab = 'overlays';
+    activeStep = 'text';
     scheduleCurrentDraft();
+  }
+
+  function geometryChanged(update: Partial<TextOverlay>): boolean {
+    return ['x', 'y', 'width', 'height'].some((key) => key in update);
+  }
+
+  function applyOverlayUpdate(
+    overlayId: string,
+    update: Partial<TextOverlay>,
+    clearAutomaticCorner = false,
+  ): boolean {
+    const current = overlays.find((overlay) => overlay.id === overlayId);
+    if (!current) return false;
+    const proposed = updateOverlay(current, {
+      ...update,
+      ...(clearAutomaticCorner ? { placementCorner: undefined } : {}),
+    });
+    const others = overlays.filter((overlay) => overlay.id !== overlayId);
+    if (geometryChanged(update) && overlapsAny(proposed, others)) {
+      statusMessage = t.overlayOverlapPrevented;
+      return false;
+    }
+    overlays = overlays.map((overlay) => (overlay.id === overlayId ? proposed : overlay));
+    scheduleCurrentDraft();
+    return true;
   }
 
   function updateSelected(update: Partial<TextOverlay>): void {
     if (!selectedOverlayId) return;
-    overlays = overlays.map((overlay) =>
-      overlay.id === selectedOverlayId ? updateOverlay(overlay, update) : overlay,
-    );
-    scheduleCurrentDraft();
+    applyOverlayUpdate(selectedOverlayId, update, geometryChanged(update));
   }
 
   function updateById(overlayId: string, update: Partial<TextOverlay>): void {
     selectedOverlayId = overlayId;
-    overlays = overlays.map((overlay) =>
-      overlay.id === overlayId ? updateOverlay(overlay, update) : overlay,
-    );
-    scheduleCurrentDraft();
+    applyOverlayUpdate(overlayId, update, geometryChanged(update));
   }
 
   function moveSelected(dx: number, dy: number): void {
     if (!selectedOverlayId) return;
-    overlays = overlays.map((overlay) =>
-      overlay.id === selectedOverlayId ? moveOverlay(overlay, { dx, dy }) : overlay,
-    );
-    scheduleCurrentDraft();
+    const current = overlays.find((overlay) => overlay.id === selectedOverlayId);
+    if (!current) return;
+    const moved = moveOverlay(current, { dx, dy });
+    applyOverlayUpdate(selectedOverlayId, { x: moved.x, y: moved.y }, true);
   }
 
   function moveById(overlayId: string, dx: number, dy: number): void {
     selectedOverlayId = overlayId;
-    overlays = overlays.map((overlay) =>
-      overlay.id === overlayId ? moveOverlay(overlay, { dx, dy }) : overlay,
-    );
-    scheduleCurrentDraft();
+    const current = overlays.find((overlay) => overlay.id === overlayId);
+    if (!current) return;
+    const moved = moveOverlay(current, { dx, dy });
+    applyOverlayUpdate(overlayId, { x: moved.x, y: moved.y }, true);
   }
 
   function resizeSelected(dw: number, dh: number): void {
     if (!selectedOverlayId) return;
-    overlays = overlays.map((overlay) =>
-      overlay.id === selectedOverlayId ? resizeOverlay(overlay, { dw, dh }) : overlay,
+    const current = overlays.find((overlay) => overlay.id === selectedOverlayId);
+    if (!current) return;
+    const resized = resizeOverlay(current, { dw, dh });
+    applyOverlayUpdate(selectedOverlayId, { width: resized.width, height: resized.height }, true);
+  }
+
+  function changeTextCorner(corner: OverlayCorner): void {
+    const current = selectedOverlay?.role === 'coordinate' ? null : selectedOverlay;
+    if (!current) {
+      textCorner = corner;
+      return;
+    }
+    const placement = findCornerPlacement(
+      current,
+      overlays.filter((overlay) => overlay.id !== current.id),
+      corner,
     );
+    if (!placement) {
+      statusMessage = t.overlayPlacementUnavailable;
+      return;
+    }
+    textCorner = corner;
+    applyOverlayUpdate(current.id, { ...placement, placementCorner: corner });
+  }
+
+  function changeCoordinateSelectionMode(mode: CoordinateSelectionMode): void {
+    const nextFormats =
+      mode === 'single'
+        ? [coordinateFormats[0] ?? coordinate?.displayFormat ?? 'WGS84_DD']
+        : coordinateFormats.length > 0
+          ? coordinateFormats
+          : [coordinate?.displayFormat ?? 'WGS84_DD'];
+    if (coordinate && !syncCoordinateOverlays(coordinate, nextFormats)) return;
+    coordinateSelectionMode = mode;
+    coordinateFormats = nextFormats;
+    scheduleCurrentDraft();
+  }
+
+  function toggleCoordinateFormat(format: CoordinateDisplayFormat): void {
+    const nextFormats =
+      coordinateSelectionMode === 'single'
+        ? [format]
+        : coordinateFormats.includes(format)
+          ? coordinateFormats.filter((item) => item !== format)
+          : [...coordinateFormats, format];
+    if (nextFormats.length === 0) {
+      statusMessage = t.keepOneCoordinateFormat;
+      return;
+    }
+    if (coordinate && !syncCoordinateOverlays(coordinate, nextFormats)) return;
+    coordinateFormats = nextFormats;
+    scheduleCurrentDraft();
+  }
+
+  function changeCoordinateCorner(corner: OverlayCorner): void {
+    if (coordinate && !syncCoordinateOverlays(coordinate, coordinateFormats, corner)) return;
+    coordinateCorner = corner;
     scheduleCurrentDraft();
   }
 
@@ -907,14 +1077,15 @@
               fontSize: 0.06,
               textColor: '#ffffff',
               backgroundColor: '#111827',
-              x: 0.08,
-              y: 0.08,
-              width: 0.6,
+              x: 0.53,
+              y: 0.03,
+              width: 0.44,
               height: 0.1,
               padding: 0.012,
               lineHeight: 1.2,
               order: 0,
               contrastStatus: 'acceptable' as const,
+              placementCorner: 'top-right' as const,
             },
           ]
         : []),
@@ -927,19 +1098,20 @@
               fontSize: 0.04,
               textColor: '#ffffff',
               backgroundColor: '#111827',
-              x: 0.08,
-              y: 0.2,
-              width: 0.5,
+              x: 0.53,
+              y: 0.14,
+              width: 0.44,
               height: 0.09,
               padding: 0.012,
               lineHeight: 1.2,
               order: value.title ? 1 : 0,
               contrastStatus: 'acceptable' as const,
+              placementCorner: 'top-right' as const,
             },
           ]
         : []),
     ];
-    batchSession = applySharedBatchSettings(
+    const candidateSession = applySharedBatchSettings(
       batchSession,
       {
         displayFormat: value.displayFormat,
@@ -947,22 +1119,47 @@
       },
       (photoId, index) => nextId(`${photoId}-shared-${index}`),
     );
-    batchSession = {
-      ...batchSession,
-      items: batchSession.items.map((item) =>
-        item.kind === 'editable' && item.coordinate
-          ? {
-              ...item,
-              overlays: item.overlays.map((overlay) =>
-                overlay.role === 'coordinate'
-                  ? updateOverlay(overlay, { content: coordinateText(item.coordinate!) })
-                  : overlay,
-              ),
-            }
-          : item,
-      ),
-    };
+    let placementFailed = false;
+    const placedItems = candidateSession.items.map((item) => {
+      if (item.kind !== 'editable' || !item.coordinate) return item;
+      const nonCoordinate = item.overlays.filter((overlay) => overlay.role !== 'coordinate');
+      const placedCoordinates: TextOverlay[] = [];
+      for (const overlay of item.overlays.filter((candidate) => candidate.role === 'coordinate')) {
+        const placement = findCornerPlacement(
+          overlay,
+          [...nonCoordinate, ...placedCoordinates],
+          overlay.placementCorner ?? 'bottom-left',
+        );
+        if (!placement) {
+          placementFailed = true;
+          return item;
+        }
+        placedCoordinates.push(
+          updateOverlay(overlay, {
+            ...placement,
+            content: coordinateText(
+              item.coordinate,
+              overlay.coordinateFormat ?? item.coordinate.displayFormat,
+            ),
+          }),
+        );
+      }
+      return {
+        ...item,
+        overlays: [...nonCoordinate, ...placedCoordinates].map((overlay, order) => ({
+          ...overlay,
+          order,
+        })),
+      };
+    });
+    if (placementFailed) {
+      statusMessage = t.overlayPlacementUnavailable;
+      return;
+    }
+    batchSession = { ...candidateSession, items: placedItems };
+    const currentStep = activeStep;
     loadBatchItem(batchSession.activeItemId, false);
+    activeStep = currentStep;
     statusMessage = t.sharedSettingsApplied;
     scheduleCurrentDraft();
   }
@@ -1183,8 +1380,19 @@
   </header>
 
   <section class="application-status" aria-label={t.applicationStatus}>
-    <OfflineStatus readiness={offlineReadiness} online={isOnline} />
     <DraftStatus status={draftStatus} />
+    <details class="platform-status">
+      <summary>
+        {offlineReadiness.status === 'ready' ? t.offlineReady : t.offlineNotReady}
+        · {t.appStatusDetails}
+      </summary>
+      <div class="platform-status-content">
+        <OfflineStatus readiness={offlineReadiness} online={isOnline} />
+        {#if !installedApp}
+          <InstallHelp installed={installedApp} />
+        {/if}
+      </div>
+    </details>
     {#if draftRecoveryIssue}
       <p class="recovery-error" role="alert">{draftRecoveryIssue}</p>
       <button
@@ -1195,9 +1403,6 @@
           void findRecoverableDraft();
         }}>{t.retryDraftRecovery}</button
       >
-    {/if}
-    {#if !installedApp}
-      <InstallHelp installed={installedApp} />
     {/if}
   </section>
 
@@ -1231,130 +1436,140 @@
       message={viewState === 'error' ? errorMessage : statusMessage}
       busy={viewState === 'exporting'}
     />
-    <div class="workspace-grid">
-      <nav class="photo-rail" aria-label={t.photosLabel}>
-        {#if isBatch && batchSession}
-          <PhotoNavigator
-            items={batchNavigatorItems}
-            activeItemId={batchSession.activeItemId}
-            onSelect={loadBatchItem}
-            onRemove={removeInvalidItem}
-          />
-        {:else}
-          <PhotoStatus
-            name={photo.sourceName}
-            status={viewState === 'success'
-              ? 'Exported'
-              : coordinateReady
-                ? 'Ready'
-                : 'Missing coordinate'}
-            active
-          />
-        {/if}
-        <ImportPanel onFiles={handleFiles} />
-      </nav>
+    <StepNavigation step={activeStep} onChange={changeStep} />
 
-      <PreviewStage
-        {photoUrl}
-        photoAlt={`${t.previewOf} ${photo.sourceName}`}
-        {overlays}
-        selectedId={selectedOverlayId}
-        onSelect={(id) => {
-          selectedOverlayId = id;
-          inspectorTab = 'overlays';
-        }}
-        onMove={moveById}
-        onUpdate={updateById}
-      />
-
-      <aside class="inspector" aria-label={t.photoInspectorLabel}>
-        <div class="tabs" role="tablist" aria-label={t.inspectorSectionsLabel}>
-          {#each ['coordinate', 'overlays', 'export'] as tab (tab)}
-            <button
-              type="button"
-              role="tab"
-              aria-selected={inspectorTab === tab}
-              onclick={() => (inspectorTab = tab as InspectorTab)}
-              >{tab === 'export'
-                ? t.exportSettings
-                : tab === 'coordinate'
-                  ? t.coordinateTab
-                  : t.overlaysTab}</button
-            >
-          {/each}
+    <section class="step-page" data-step-page={activeStep} aria-label={`${activeStep} step`}>
+      {#if activeStep === 'photo'}
+        <div class="photo-step">
+          <nav class="photo-rail" aria-label={t.photosLabel}>
+            {#if isBatch && batchSession}
+              <PhotoNavigator
+                items={batchNavigatorItems}
+                activeItemId={batchSession.activeItemId}
+                onSelect={loadBatchItem}
+                onRemove={removeInvalidItem}
+              />
+            {:else}
+              <PhotoStatus
+                name={photo.sourceName}
+                status={viewState === 'success'
+                  ? 'Exported'
+                  : coordinateReady
+                    ? 'Ready'
+                    : 'Missing coordinate'}
+                active
+              />
+            {/if}
+            <ImportPanel onFiles={handleFiles} />
+          </nav>
+          <figure class="selected-photo">
+            <img src={photoUrl} alt={`${t.previewOf} ${photo.sourceName}`} />
+            <figcaption>
+              <strong>{t.selectedPhoto}</strong>
+              <span>{photo.sourceName} · {photo.displayWidth} × {photo.displayHeight}</span>
+            </figcaption>
+          </figure>
         </div>
-
-        {#if inspectorTab === 'coordinate'}
-          <CoordinateCard
-            {coordinate}
-            {displayText}
-            captureCoordinate={photo.metadataSummary.captureGps}
-            {locationError}
-            {manualError}
-            onUseCurrentLocation={handleCurrentLocation}
-            onManualAccepted={handleManualCoordinate}
-            onDisplayChange={handleDisplayChange}
-          />
-          <button
-            type="button"
-            class="map-action"
-            disabled={!coordinateReady}
-            onclick={requestMapPreview}>{t.previewOnMap}</button
-          >
-        {:else if inspectorTab === 'overlays'}
-          <div class="add-overlays" aria-label={t.addTextOverlayLabel}>
-            <button type="button" onclick={() => addOverlay('title')}>{t.addTitle}</button>
-            <button type="button" onclick={() => addOverlay('team')}>{t.addTeam}</button>
-            <button type="button" onclick={() => addOverlay('freeform')}>{t.addFreeformText}</button
-            >
-          </div>
-          <OverlayList
+      {:else}
+        <div class="editing-step">
+          <PreviewStage
+            {photoUrl}
+            photoAlt={`${t.previewOf} ${photo.sourceName}`}
             {overlays}
-            selectedId={selectedOverlayId}
-            onSelect={(id) => (selectedOverlayId = id)}
-            onRemove={removeOverlayById}
-            onReorder={reorderOverlayById}
+            selectedId={activeStep === 'text' ? selectedOverlayId : null}
+            onSelect={(id) => {
+              selectedOverlayId = id;
+              activeStep = 'text';
+            }}
+            onMove={moveById}
+            onUpdate={updateById}
           />
-          <OverlayInspector
-            overlay={selectedOverlay}
-            onUpdate={updateSelected}
-            onMove={moveSelected}
-            onResize={resizeSelected}
-            onRemove={removeSelected}
-          />
-        {:else}
-          {#if isBatch}
-            <BatchSettings onApply={applySharedSettings} />
-          {/if}
-          <ExportSettings {configuration} onChange={updateConfiguration} />
-        {/if}
 
-        <div class="primary-actions">
-          <button
-            type="button"
-            class="primary"
-            disabled={!canOpenReview || viewState === 'exporting'}
-            aria-describedby={!canOpenReview ? 'review-disabled-reason' : undefined}
-            onclick={openExportReview}>{t.reviewExport}</button
-          >
-          {#if !canOpenReview}
-            <p id="review-disabled-reason">{disabledReason}</p>
-          {/if}
+          <aside class="step-controls" aria-label={t.photoInspectorLabel}>
+            {#if activeStep === 'coordinate'}
+              <CoordinateCard
+                {coordinate}
+                {displayText}
+                captureCoordinate={photo.metadataSummary.captureGps}
+                {locationError}
+                {manualError}
+                onUseCurrentLocation={handleCurrentLocation}
+                onManualAccepted={handleManualCoordinate}
+                onDisplayChange={handleDisplayChange}
+              />
+              <CoordinateOverlayOptions
+                mode={coordinateSelectionMode}
+                formats={coordinateFormats}
+                corner={coordinateCorner}
+                onModeChange={changeCoordinateSelectionMode}
+                onFormatToggle={toggleCoordinateFormat}
+                onCornerChange={changeCoordinateCorner}
+              />
+              <button
+                type="button"
+                class="map-action"
+                disabled={!coordinateReady}
+                onclick={requestMapPreview}>{t.previewOnMap}</button
+              >
+            {:else if activeStep === 'text'}
+              <div class="add-overlays" aria-label={t.addTextOverlayLabel}>
+                <button type="button" onclick={() => addOverlay('title')}>{t.addTitle}</button>
+                <button type="button" onclick={() => addOverlay('team')}>{t.addTeam}</button>
+                <button type="button" onclick={() => addOverlay('freeform')}
+                  >{t.addFreeformText}</button
+                >
+              </div>
+              <CornerPicker label={t.textCorner} value={textCorner} onChange={changeTextCorner} />
+              <OverlayList
+                overlays={textOverlays}
+                selectedId={selectedOverlayId}
+                onSelect={(id) => (selectedOverlayId = id)}
+                onRemove={removeOverlayById}
+                onReorder={reorderOverlayById}
+              />
+              <details class="precise-adjustments">
+                <summary>{t.preciseAdjustments}</summary>
+                <OverlayInspector
+                  overlay={selectedOverlay?.role === 'coordinate' ? null : selectedOverlay}
+                  onUpdate={updateSelected}
+                  onMove={moveSelected}
+                  onResize={resizeSelected}
+                  onRemove={removeSelected}
+                />
+              </details>
+            {:else}
+              {#if isBatch}
+                <BatchSettings onApply={applySharedSettings} />
+              {/if}
+              <ExportSettings {configuration} onChange={updateConfiguration} />
+              <div class="primary-actions">
+                <button
+                  type="button"
+                  class="primary"
+                  disabled={!canOpenReview || viewState === 'exporting'}
+                  aria-describedby={!canOpenReview ? 'review-disabled-reason' : undefined}
+                  onclick={openExportReview}>{t.reviewExport}</button
+                >
+                {#if !canOpenReview}
+                  <p id="review-disabled-reason">{disabledReason}</p>
+                {/if}
+              </div>
+              {#if isBatch && exportResults.length > 0}
+                <BatchResults items={batchResultItems} onRetry={() => void retryFailedBatch()} />
+              {:else if exportResults.length > 0}
+                <ExportResults
+                  results={exportResults}
+                  onRetry={() => {
+                    viewState = 'editing';
+                    reviewOpen = true;
+                  }}
+                />
+              {/if}
+            {/if}
+          </aside>
         </div>
-      </aside>
-    </div>
-
-    {#if isBatch && exportResults.length > 0}
-      <BatchResults items={batchResultItems} onRetry={() => void retryFailedBatch()} />
-    {:else if exportResults.length > 0}
-      <ExportResults
-        results={exportResults}
-        onRetry={() => {
-          viewState = 'editing';
-          reviewOpen = true;
-        }}
-      />
-    {/if}
+      {/if}
+    </section>
 
     <ExportReview
       open={reviewOpen}
@@ -1397,14 +1612,15 @@
 <style>
   .workspace {
     display: grid;
-    min-height: 100vh;
-    align-content: start;
-    gap: 1rem;
+    height: 100dvh;
+    grid-template-rows: auto auto auto auto minmax(0, 1fr);
+    gap: 0.75rem;
+    overflow: hidden;
     padding: clamp(1rem, 2vw, 1.5rem);
+    padding-bottom: 5.5rem;
   }
 
   .app-header,
-  .tabs,
   .add-overlays,
   .primary-actions {
     display: flex;
@@ -1419,9 +1635,29 @@
 
   .application-status {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    align-items: start;
+    grid-template-columns: auto minmax(15rem, 1fr);
+    align-items: center;
     gap: 0.75rem;
+  }
+
+  .platform-status {
+    min-width: 0;
+    border: 1px solid #334155;
+    border-radius: 0.75rem;
+    background: #0f172a;
+  }
+
+  .platform-status summary {
+    min-height: 44px;
+    padding: 0.7rem 0.85rem;
+    cursor: pointer;
+  }
+
+  .platform-status-content {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    padding: 0 0.75rem 0.75rem;
   }
 
   h1,
@@ -1448,25 +1684,81 @@
     color: #a7f3d0;
   }
 
-  .workspace-grid {
+  .step-page {
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+
+  .photo-step,
+  .editing-step {
     display: grid;
-    grid-template-columns: minmax(12rem, 0.24fr) minmax(0, 1fr) minmax(18rem, 0.38fr);
+    grid-template-columns: minmax(16rem, 0.42fr) minmax(0, 1fr);
     align-items: start;
     gap: 1rem;
   }
 
+  .editing-step {
+    grid-template-columns: minmax(0, 1.35fr) minmax(19rem, 0.65fr);
+  }
+
   .photo-rail,
-  .inspector {
+  .step-controls {
     display: grid;
     min-width: 0;
     gap: 1rem;
+  }
+
+  .selected-photo {
+    display: grid;
+    min-width: 0;
+    min-height: 20rem;
+    margin: 0;
+    padding: 1rem;
+    border: 1px solid #334155;
+    border-radius: 1rem;
+    background: #0f172a;
+  }
+
+  .selected-photo img {
+    width: 100%;
+    max-height: 55vh;
+    object-fit: contain;
+    border-radius: 0.75rem;
+    background: #020617;
+  }
+
+  .selected-photo figcaption {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding-top: 0.75rem;
+    color: #cbd5e1;
+  }
+
+  .precise-adjustments {
+    border: 1px solid #334155;
+    border-radius: 0.75rem;
+    background: #0f172a;
+  }
+
+  .precise-adjustments summary {
+    min-height: 44px;
+    padding: 0.75rem;
+    cursor: pointer;
+    font-weight: 700;
+  }
+
+  .precise-adjustments :global(.overlay-inspector) {
+    padding: 0 0.75rem 0.75rem;
   }
 
   .photo-rail :global(.import-panel) {
     padding: 1rem;
   }
 
-  .tabs button,
   .add-overlays button,
   .map-action,
   .primary,
@@ -1480,7 +1772,6 @@
     cursor: pointer;
   }
 
-  .tabs button[aria-selected='true'],
   .primary {
     color: #0f172a;
     background: #93c5fd;
@@ -1507,42 +1798,48 @@
   }
 
   @media (max-width: 1023px) {
-    .workspace-grid {
-      grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.55fr);
-    }
-
-    .photo-rail {
-      grid-column: 1 / -1;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+    .editing-step {
+      grid-template-columns: minmax(0, 1fr) minmax(17rem, 0.8fr);
     }
   }
 
   @media (max-width: 767px) {
     .workspace {
       padding: 0.75rem;
+      padding-bottom: 5.25rem;
     }
 
-    .workspace-grid,
+    .photo-step,
+    .editing-step,
     .photo-rail,
-    .application-status {
+    .application-status,
+    .platform-status-content {
       grid-template-columns: minmax(0, 1fr);
     }
 
-    .photo-rail {
-      overflow-x: auto;
+    .app-header .eyebrow,
+    .privacy {
+      display: none;
     }
 
-    .primary-actions {
-      position: sticky;
-      bottom: 0;
-      z-index: 5;
+    h1 {
+      font-size: 1.75rem;
     }
 
-    .inspector :global(input),
-    .inspector :global(textarea),
-    .inspector :global(select),
-    .inspector :global(button) {
-      scroll-margin-bottom: 5rem;
+    .application-status {
+      gap: 0.5rem;
+    }
+
+    .selected-photo {
+      min-height: 16rem;
+    }
+
+    .step-controls :global(input),
+    .step-controls :global(textarea),
+    .step-controls :global(select),
+    .step-controls :global(button),
+    .step-controls :global(summary) {
+      scroll-margin-bottom: 6rem;
     }
   }
 </style>

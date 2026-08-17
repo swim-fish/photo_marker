@@ -36,7 +36,7 @@ test('loads one real EMAP5 tile with CORS on Windows', async ({ page, viewportKi
   const displayFormat = page.getByLabel('Display format');
   await displayFormat.focus();
   const displayBox = await displayFormat.boundingBox();
-  const stickyBox = await page.locator('.primary-actions').boundingBox();
+  const stickyBox = await page.locator('.step-actions').boundingBox();
   expect(displayBox).not.toBeNull();
   expect(stickyBox).not.toBeNull();
   expect(displayBox!.y + displayBox!.height).toBeLessThanOrEqual(stickyBox!.y);

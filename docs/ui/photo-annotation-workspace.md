@@ -10,14 +10,16 @@ browsing, offline maps, filters, cloud flows, or separate platform-specific UIs.
 
 ## Information architecture
 
-The workspace contains these ordered regions:
+The workspace is a four-step application flow rather than one long document:
 
-1. Application status: offline readiness and local-draft persistence.
-2. Photo navigator: active photo, position in batch, and per-photo status.
-3. Preview stage: oriented image, overlays, and explicit zoom controls.
-4. Inspector: Coordinate, Overlays, and Export settings.
-5. Primary actions: Review export, Export, Retry, or contextual recovery.
-6. Optional map preview: consent-gated EMAP5 context for the accepted coordinate.
+1. `Photo`: import, active-photo selection, and source preview.
+2. `Coordinate`: working-coordinate entry, displayed formats, corner, and optional map preview.
+3. `Text`: add, select, edit, place, and precisely adjust text overlays.
+4. `Export`: shared batch values, output settings, review, progress, and results.
+
+The active step is the only step page in the content area. The step bar and fixed Previous/Next bar
+remain available without forcing the user to scroll through other steps. Offline and draft status are
+compact, expandable application-level regions above the step page.
 
 Only one photo is active at a time. The navigator shows filename, index, and both icon and text status:
 `Ready`, `Missing coordinate`, `Invalid`, `Exported`, or `Failed`. Shared batch settings populate
@@ -27,9 +29,9 @@ per-photo values; each coordinate provenance and validation result remains indep
 
 | Viewport | Region arrangement |
 |----------|--------------------|
-| `<768 CSS px` | Vertical status, horizontal photo strip, preview stage, inspector tabs/non-modal drawer, sticky actions |
-| `768–1023 CSS px` | Two regions: navigator/stage plus inspector |
-| `≥1024 CSS px` | Three regions: photo rail, preview stage, persistent inspector |
+| `<768 CSS px` | One active step page; stage and controls stack; fixed Previous/Next bar |
+| `768–1023 CSS px` | One active step page; stage and controls use a compact two-column arrangement when space permits |
+| `≥1024 CSS px` | One active step page; stage and controls use a wider two-column arrangement |
 
 The functional reflow floor is 320 CSS px. Required visual fixtures are 320×568 portrait, 568×320
 landscape, 1024×768 desktop, and 1280×720 at 400% browser zoom. Surrounding controls do not create
@@ -37,8 +39,8 @@ two-dimensional page scrolling or blocking overlap. The image work surface may p
 when zoom makes that necessary. Pointer capability is detected independently from viewport width.
 
 Interactive targets are designed at 44×44 CSS px and must never fall below WCAG 2.2 AA target-size or
-spacing requirements. Only the mobile arrangement uses a sticky primary action; tablet and desktop
-actions remain in normal flow. Sticky actions and drawers must not obscure the focused control.
+spacing requirements. The Previous/Next bar is fixed on every supported viewport. The step page owns
+vertical scrolling and reserves enough bottom space that the bar does not obscure focused controls.
 
 ## Screen contracts
 
@@ -61,13 +63,14 @@ actions remain in normal flow. Sticky actions and drawers must not obscure the f
   visible error text.
 - Preserve selected Files if offline readiness is incomplete and explain the missing readiness step.
 
-### Editor
+### Guided editor
 
 - Header exposes offline readiness and `Saving…`, `Saved locally`, or actionable storage failure.
-- Navigator exposes the active photo and every per-photo review state.
+- `Photo` exposes the active photo and every per-photo review state.
 - Stage shows an oriented preview and visual overlay selection without becoming the sole control.
-- Inspector tabs are `Coordinate`, `Overlays`, and `Export settings`.
-- `Review export` remains visible. If disabled, a persistent reason is linked with `aria-describedby`.
+- The four named steps are buttons and expose the current step through `aria-current="step"`.
+- `Review export` is on the `Export` step. If disabled, a persistent reason is linked with
+  `aria-describedby`.
 
 ### Export review
 
@@ -144,16 +147,30 @@ entry. The app never presents processing location as capture metadata.
 
 ## Overlay interaction
 
-The overlay list remains the semantic selection surface. Each row has an accessible name,
+Coordinate overlays support either one selected format or several selected formats. The supported
+choices are WGS84 DD, WGS84 DMS, TWD97, TWD67, MGRS, and Taipower. Coordinate overlays share one of
+four selected corners. Text additions independently share one of those four corners.
+
+Automatic placement uses a 3% image-edge inset, a 1% safety gap, and an overlay width of no more than
+44% of the image. Items in a corner are packed from the outside edge toward the image center. Every
+add, format change, corner change, keyboard movement, numeric adjustment, resize, and direct drag is
+checked against all other overlay rectangles. If no safe slot exists or a proposed edit overlaps
+another rectangle, the previous geometry remains unchanged and an actionable status message asks the
+user to choose another corner or remove an item. This geometric rule is deterministic in normalized
+image coordinates and applies identically to preview and export.
+
+The text overlay list remains the semantic selection surface. Each row has an accessible name,
 role/content summary, selected state, and remove action. Selecting text on the photo opens a quick
 editor directly below the preview. The quick editor exposes the text, text color, background color,
 and clearly labelled `A−`/`A+` text-size controls. A tap or click that does not become a drag moves
-focus to the text field so editing can begin immediately.
+focus to the text field so editing can begin immediately. Coordinate overlays are configured on the
+`Coordinate` step and are not duplicated in the text list.
 
 Touch, pen, and mouse users drag selected text directly on the photo. Movement begins only after a
 4 CSS px threshold so an ordinary tap remains an edit action. The pointer delta is converted to the
-same normalized coordinates used by export, and the result is clamped inside the image. The existing
-inspector remains available for precise numeric position and box-size adjustments. Equivalent
+same normalized coordinates used by export, and the result is clamped inside the image. The collapsed
+`Precise adjustments` section remains available for numeric position and box-size adjustments.
+Equivalent
 keyboard and explicit-button controls include:
 
 - Move up/down/left/right buttons.
@@ -162,11 +179,12 @@ keyboard and explicit-button controls include:
 - Remove and reorder controls.
 - Arrow movement at 1% and `Shift+Arrow` at 5%.
 
-All paths update the same normalized state and clamp overlays inside image bounds. Focus and selection
-use distinct indicators visible on light and dark photos. Overlay selection retains a 44 px effective
-hit area without changing normalized output geometry. Direct-drag targets use `touch-action: none`
-only within the overlay hit area; page pan and browser zoom remain available elsewhere, and explicit
-zoom buttons remain available.
+All paths update the same normalized state, clamp overlays inside image bounds, and reject overlap.
+Manual movement clears automatic corner affiliation so later corner packing does not unexpectedly
+move that item. Focus and selection use distinct indicators visible on light and dark photos. Overlay
+selection retains a 44 px effective hit area without changing normalized output geometry.
+Direct-drag targets use `touch-action: none` only within the overlay hit area; page pan and browser
+zoom remain available elsewhere, and explicit zoom buttons remain available.
 
 Low text/background contrast shows a warning and offers safe presets. User colors are not silently
 changed. Preview and export use the same bundled fonts and renderer geometry; Unicode, Taiwan
@@ -174,8 +192,8 @@ Traditional Chinese, multiline text, and emoji remain visible when supported by 
 
 ## Keyboard and focus order
 
-`Tab` and `Shift+Tab` move through application status, photo navigator, stage controls, inspector tabs
-and fields, then primary actions. Arrow keys move within documented composite widgets or manipulate
+`Tab` and `Shift+Tab` move through application status, step buttons, active-step controls, and the
+fixed Previous/Next actions. Arrow keys move within documented composite widgets or manipulate
 the selected overlay; they do not unexpectedly change unrelated fields. Native controls are preferred.
 
 On photo change, keep focus on the invoking navigator item unless an error requires a linked message.
@@ -212,11 +230,12 @@ magic bytes before local persistence, then startup consumes it through the commo
   storage-warning, export-failure, success, and partial-batch states.
 - Complete one single-photo path with touch and one with keyboard only.
 - Compare tap/click inspector and keyboard move/resize output positions.
-- Inspect 320×568, 568×320, 1024×768, and 400% zoom for reflow, target size, and focus obstruction.
+- Inspect 375×812, 768×1024, and 1280×800 for reflow, target size, one-step visibility, fixed-action
+  clearance, and focus obstruction.
 - Run one desktop browser/screen-reader and one supported mobile browser/screen-reader smoke path for
   names, provenance, errors, progress, and modal focus.
-- Compare approved preview/export fixtures including Traditional Chinese, multiline, emoji, overlap,
-  colors, orientations, and image edges.
+- Compare approved preview/export fixtures including Traditional Chinese, multiline, emoji, rejected
+  overlap, four-corner packing, colors, orientations, and image edges.
 - Run one 20-photo-plus-invalid navigator/export-result scenario. No broad or prolonged performance
   suite is part of UI validation.
 - Inspect map consent, saved-consent reopen, online indicator, attribution, offline/provider failure,

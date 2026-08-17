@@ -93,9 +93,13 @@ test('records the three-run 4032x3024 single-photo baseline', async ({ page, vie
     await page.getByLabel(/Latitude \(WGS84 decimal degrees\)/i).fill('25.033');
     await page.getByLabel(/Longitude \(WGS84 decimal degrees\)/i).fill('121.5654');
     await page.getByRole('button', { name: 'Use manual coordinate' }).click();
-    await page.getByRole('tab', { name: 'Overlays' }).click();
+    await page.getByRole('button', { name: 'Text', exact: true }).click();
     await page.getByRole('button', { name: 'Add free-form text' }).click();
-    await page.getByLabel('Content').fill(`Baseline run ${run}`);
+    await page
+      .getByRole('region', { name: 'Quick edit selected text' })
+      .getByRole('textbox', { name: 'Text', exact: true })
+      .fill(`Baseline run ${run}`);
+    await page.getByRole('button', { name: 'Export', exact: true }).click();
     await page.getByRole('button', { name: 'Review export' }).click();
 
     const exportStarted = performance.now();

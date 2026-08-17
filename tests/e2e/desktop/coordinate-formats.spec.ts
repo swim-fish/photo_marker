@@ -32,7 +32,7 @@ test.describe('coordinate formats and consented map preview', () => {
     await page.getByLabel('Display format').selectOption('MGRS');
     await expect(page.getByText(/51R\s*UH/i).first()).toBeVisible();
     await expect(page.getByText('Manual input', { exact: true })).toBeVisible();
-    await page.getByRole('tab', { name: 'Overlays' }).click();
+    await page.getByRole('button', { name: 'Text', exact: true }).click();
     await expect(page.getByText(/Manual input: 51R/i).first()).toBeVisible();
   });
 

@@ -67,9 +67,7 @@ test.describe('single-photo desktop journey', () => {
     await page.goto('/');
 
     await page.locator('input[type="file"]').setInputFiles(photoFixture);
-    await expect(
-      page.getByRole('button', { name: /sample\.png Missing coordinate/i }),
-    ).toBeVisible();
+    await expect(page.getByRole('img', { name: /Preview of sample\.png/i })).toBeVisible();
 
     await page.getByLabel(/Latitude \(WGS84 decimal degrees\)/i).fill('25.033');
     await page.getByLabel(/Longitude \(WGS84 decimal degrees\)/i).fill('121.5654');
@@ -78,10 +76,14 @@ test.describe('single-photo desktop journey', () => {
     await page.keyboard.press('Enter');
     await expect(page.getByText(/Manual input: 25\.033000, 121\.565400/)).toBeVisible();
 
-    await page.getByRole('tab', { name: 'Overlays' }).click();
+    await page.getByRole('button', { name: 'Text', exact: true }).click();
     await page.getByRole('button', { name: 'Add free-form text' }).click();
-    await page.getByLabel('Content').fill('Inspection complete');
+    await page
+      .getByRole('region', { name: 'Quick edit selected text' })
+      .getByRole('textbox', { name: 'Text', exact: true })
+      .fill('Inspection complete');
 
+    await page.getByRole('button', { name: 'Export', exact: true }).click();
     const review = page.getByRole('button', { name: 'Review export' });
     await expect(review).toBeEnabled();
     await review.focus();

@@ -126,9 +126,13 @@ precision semantics where relevant.
 | `padding`, `lineHeight` | normalized number | Non-negative, bounded |
 | `order` | non-negative integer | Unique within a photo |
 | `contrastStatus` | enum | `acceptable`, `warning`; warning does not silently change colors |
+| `placementCorner` | optional enum | `top-left`, `top-right`, `bottom-left`, or `bottom-right`; absent for manually placed or legacy overlays |
+| `coordinateFormat` | optional enum | Present for coordinate overlays when a specific supported display format is selected |
 
 Direct manipulation, numeric fields, step buttons, and keyboard movement all update the same record.
-Default movement is 1% and accelerated movement is 5%; every path clamps to image bounds.
+Default movement is 1% and accelerated movement is 5%; every path clamps to image bounds and rejects
+intersection with another overlay. Legacy records without the optional fields restore with the
+coordinate record display format and documented bottom-left coordinate/top-right text defaults.
 
 ## ExportConfiguration
 

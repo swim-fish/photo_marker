@@ -1,5 +1,6 @@
 export type OverlayRole = 'title' | 'team' | 'coordinate' | 'freeform';
 export type ContrastStatus = 'acceptable' | 'warning';
+export type OverlayCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 
 export type OverlayGeometry = Readonly<{
   x: number;
@@ -31,6 +32,8 @@ export type TextOverlay = OverlayGeometry &
     lineHeight: number;
     order: number;
     contrastStatus: ContrastStatus;
+    placementCorner?: OverlayCorner;
+    coordinateFormat?: import('../coordinates/types').CoordinateDisplayFormat;
   }>;
 
 export type OverlayTemplate = Readonly<{

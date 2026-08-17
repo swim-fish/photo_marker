@@ -27,11 +27,17 @@ test('exports 20 valid photos sequentially and retains one explicit invalid resu
     },
   ]);
 
-  await expect(page.getByText('21 intake results')).toBeVisible({ timeout: 15_000 });
+  await expect(
+    page
+      .getByRole('status')
+      .filter({ hasText: '20 photo(s) imported locally; 1 invalid item(s).' }),
+  ).toBeVisible({ timeout: 15_000 });
+  await page.getByRole('button', { name: 'Photo', exact: true }).click();
+  await expect(page.getByText('21 intake results')).toBeVisible();
   await expect(page.getByText('batch-invalid.txt')).toBeVisible();
   await expect(page.getByText('unsupported-format')).toBeVisible();
 
-  await page.getByRole('tab', { name: 'Export settings' }).click();
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
   await page.getByLabel('Shared title').fill('Batch inspection');
   await page.getByLabel('Shared team').fill('Team A');
   await page.getByRole('button', { name: 'Apply to all photos' }).click();
@@ -53,6 +59,9 @@ test('exports 20 valid photos sequentially and retains one explicit invalid resu
   await expect(results.getByText('Exported', { exact: true })).toHaveCount(20);
   await expect(results.getByText('Failed', { exact: true })).toHaveCount(1);
   await expect(results.getByText('unsupported-format')).toBeVisible();
+  await expect(
+    page.getByRole('status').filter({ hasText: 'batch output(s) handed off' }),
+  ).toBeVisible();
   expect(downloads.length).toBeGreaterThan(0);
   testInfo.annotations.push({
     type: 'batch-baseline',
@@ -72,8 +81,10 @@ test('restores a multi-photo draft with copied shared settings', async ({ page, 
     { name: 'restore-one.png', mimeType: 'image/png', buffer: photoBytes },
     { name: 'restore-two.png', mimeType: 'image/png', buffer: photoBytes },
   ]);
-  await expect(page.getByText('2 intake results')).toBeVisible();
-  await page.getByRole('tab', { name: 'Export settings' }).click();
+  await expect(
+    page.getByRole('status').filter({ hasText: '2 photo(s) imported locally; 0 invalid item(s).' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
   await page.getByLabel('Shared title').fill('Restored batch title');
   await page.getByRole('button', { name: 'Apply to all photos' }).click();
   await expect(page.getByText(/Saved locally|Best-effort local draft/i)).toBeVisible();
@@ -82,7 +93,9 @@ test('restores a multi-photo draft with copied shared settings', async ({ page, 
   const recovery = page.getByRole('dialog', { name: /resume local draft/i });
   await expect(recovery).toBeVisible();
   await recovery.getByRole('button', { name: 'Resume draft' }).click();
+  await page.getByRole('button', { name: 'Photo', exact: true }).click();
   await expect(page.getByText('2 intake results')).toBeVisible();
+  await page.getByRole('button', { name: 'Text', exact: true }).click();
   await expect(page.getByRole('button', { name: /select and move title overlay/i })).toContainText(
     'Restored batch title',
   );

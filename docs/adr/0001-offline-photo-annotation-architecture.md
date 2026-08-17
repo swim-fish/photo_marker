@@ -60,11 +60,20 @@ Migrations are additive and transactional. Old data is not deleted until commit,
 is preserved, and export/discard cleanup is transactional. OPFS is deferred unless the focused batch
 baseline demonstrates an IndexedDB bottleneck.
 
-### 4. Accessible DOM interaction plus a shared Canvas renderer
+### 4. Accessible DOM interaction, deterministic overlay placement, and a shared Canvas renderer
 
 Use DOM components for overlay selection, forms, errors, focus, keyboard controls, and single-pointer
 drag alternatives. Keep geometry normalized to the display-oriented image. Use one pure layout and
 text-measurement implementation for preview and export.
+
+Use a four-step `Photo` → `Coordinate` → `Text` → `Export` application flow with only the active step
+rendered in the content area. Coordinate formats may be selected singly or multiply. Coordinate and
+text groups each select one of four corners; new items are packed from the outer edge inward with a
+normalized safety gap. Reject additions, corner changes, drags, keyboard movements, or numeric edits
+that would overlap another overlay, retaining the previous valid geometry. Persist optional
+`placementCorner` and `coordinateFormat` fields on overlays; their absence restores legacy drafts
+with bottom-left coordinates and top-right text defaults, so record schema version 1 remains
+backward compatible.
 
 Perform full-resolution decode/render/encode sequentially in a dedicated worker with
 `createImageBitmap` and OffscreenCanvas. Use the same renderer on the main thread if worker canvas is
@@ -138,6 +147,7 @@ that the browser wrote a specific path. ZIP packaging is out of scope.
 - One state model and renderer reduce mobile/desktop and preview/export drift.
 - Sequential processing and explicit limits bound common memory failures.
 - DOM interaction remains accessible while Canvas supplies pixel fidelity.
+- Four-corner packing makes common annotation placement predictable without requiring drag gestures.
 - Metadata and coordinate claims are narrow, documented, and testable.
 - Vendoring reuses proven Taiwan coordinate behavior without importing a map application.
 - The map dependency is proportionate to a single raster preview and stays outside the offline core.
@@ -147,6 +157,8 @@ that the browser wrote a specific path. ZIP packaging is out of scope.
 - Browser storage can still be evicted or cleared; the UI must keep that limitation visible.
 - Worker font/render behavior and Web Share Target require physical-device release checks.
 - Bounds-checked metadata rewriting is a security- and compatibility-sensitive implementation slice.
+- Large or heavily annotated photos can exhaust a chosen corner; the UI must preserve prior geometry
+  and request another corner instead of silently overlapping or shrinking text.
 - Excluding ICC may change color appearance for some sources; copying it after browser conversion could
   be worse because it may mislabel output pixels. This limitation must be disclosed.
 - Sequential batch export favors reliability over throughput.
@@ -158,6 +170,8 @@ that the browser wrote a specific path. ZIP packaging is out of scope.
 - Persisted records carry schema and record versions; migrations are additive and transactional.
 - The initial batch fields are additive optional fields in record schema version 1. Their absence
   restores single-photo defaults; unknown newer records are preserved and reported as incompatible.
+- Overlay corner and coordinate-format fields are additive and optional. Legacy overlays infer the
+  coordinate record's display format and the documented bottom-left/top-right defaults.
 - A service-worker install completes only after its precache succeeds. Old shell caches are deleted
   only after the current cache is complete; asset/navigation lookup can fall back to the retained
   prior shell cache if the current cache later becomes incomplete. The supported Android release may

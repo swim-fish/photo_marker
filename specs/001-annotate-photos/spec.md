@@ -46,6 +46,18 @@ original. Coordinate conversion behavior should be consistent with the pwa_map r
   device and application origin until the user revokes it; show an online indicator whenever the map
   is open, and require new consent after revocation.
 
+### Session 2026-08-17
+
+- Q: How should the editing workspace avoid becoming a long scrolling page? → A: Use a four-step
+  `Photo` → `Coordinate` → `Text` → `Export` application flow with Previous/Next navigation and only
+  the active step page visible.
+- Q: How should coordinate and text overlays be placed? → A: Coordinate formats may be selected
+  singly or multiply; coordinate and text groups independently choose one of four corners, and items
+  in the same corner are packed from the outside edge inward.
+- Q: What should happen when a placement or manual adjustment would overlap another text box? → A:
+  Keep the previous valid geometry and show an actionable message; drag remains an optional fine
+  adjustment rather than the primary placement method.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Annotate and Export One Photo (Priority: P1)
@@ -87,6 +99,14 @@ unchanged.
    dimensions, and source orientation metadata without unexpected rotation; changing format or
    removing metadata may normalize orientation and dimensions only after disclosure, and the user
    may choose a different supported format or quality before confirming export.
+9. **Given** a photo is imported, **When** the user edits it, **Then** only one of the four named
+   application steps is visible and Previous/Next remains available without document-length
+   scrolling through the other steps.
+10. **Given** several coordinate formats or text items use one corner, **When** an item is added or
+    the corner changes, **Then** items are placed from the outer edge inward with no overlap.
+11. **Given** a drag, keyboard move, numeric edit, or resize would overlap another text box, **When**
+    the user completes the action, **Then** the previous geometry is retained and the app explains
+    how to choose another corner or remove an item.
 
 ---
 
@@ -319,6 +339,15 @@ and verify an explicit result for every item.
   MUST remain independent of photo and draft content, MUST be revocable through the interface, and
   MUST be accompanied by a visible online indicator whenever map preview is open. Revocation MUST
   prevent every subsequent map-resource request and MUST require new consent before another preview.
+- **FR-033**: The editor MUST use a four-step `Photo`, `Coordinate`, `Text`, and `Export` application
+  flow, MUST render only the active step page, and MUST keep Previous/Next navigation available at
+  supported mobile, tablet, and desktop viewport sizes without obscuring focused controls.
+- **FR-034**: Users MUST be able to show either one coordinate format or multiple supported formats,
+  and MUST be able to choose one of four corners independently for coordinate overlays and text
+  overlays. Items assigned to the same corner MUST be placed from the outside edge inward.
+- **FR-035**: Every overlay addition, format or corner change, drag, keyboard move, numeric position
+  edit, and resize MUST preserve non-overlapping geometry. An unavailable placement MUST retain the
+  previous valid geometry and expose an actionable, localized status message.
 
 ### Key Entities
 
@@ -329,7 +358,8 @@ and verify an explicit result for every item.
 - **Coordinate Record**: The working WGS84 location, its capture-metadata, `CURRENT GPS`, or manual
   provenance, validity, selected display format, precision, applicable zone, and coverage status.
 - **Text Overlay**: User-visible annotation content with a semantic role, relative position, size,
-  text color, background color, ordering, and removal state.
+  text color, background color, ordering, optional placement corner, optional coordinate format, and
+  removal state.
 - **Export Configuration**: Output naming, format, pixel dimensions, quality, required fallback, and
   the user's metadata-retention choice.
 - **Export Result**: The per-photo success, omission, cancellation, or failure outcome and any saved
@@ -389,6 +419,9 @@ and verify an explicit result for every item.
   resources needed for the current preview, and decline, offline use, or service failure leaves the
   working coordinate and every core workflow available. After consent is revoked, zero subsequent
   map-resource requests occur until the user grants consent again.
+- **SC-013**: In approved phone, tablet, and desktop fixtures, all four corner choices and at least
+  two same-corner items remain inside the image and have zero intersecting overlay rectangles; every
+  attempted intersecting manual adjustment retains the prior rectangle.
 
 ## Assumptions
 

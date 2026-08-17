@@ -1,11 +1,12 @@
 import { formatCoordinate } from '../coordinates/formatCoordinate';
-import type { CoordinateRecord } from '../coordinates/types';
+import type { CoordinateDisplayFormat, CoordinateRecord } from '../coordinates/types';
 
 export function formatCoordinateOverlay(
   coordinate: CoordinateRecord,
   provenanceLabel: string,
+  displayFormat: CoordinateDisplayFormat = coordinate.displayFormat,
 ): string {
-  const formatted = formatCoordinate(coordinate, coordinate.displayFormat, {
+  const formatted = formatCoordinate(coordinate, displayFormat, {
     zone: coordinate.zone,
     precision: coordinate.precision,
   });

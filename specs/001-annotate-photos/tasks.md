@@ -213,6 +213,23 @@ accessibility, documentation, and definition-of-done risks.
 - [x] T073 Have the primary implementer resolve every material T070–T072 finding in its owning source/tests/docs and record each disposition in `specs/001-annotate-photos/verification.md`
 - [x] T074 Run `npm run format:check`, `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, and the relevant Playwright projects, then record outcomes, skipped checks, blockers, remaining risks, ADR impact, and UI-documentation impact in `specs/001-annotate-photos/verification.md`
 
+## Phase 8: Guided Four-Corner Editing Flow
+
+**Purpose**: Replace the long editor with the approved step flow and make routine placement
+deterministic without removing accessible fine adjustment.
+
+- [x] T075 [US1] Write failing unit/component tests for four-step navigation, single/multiple
+  coordinate selection, four-corner selection, outer-inward packing, and collision rejection in
+  `tests/unit/overlays/placement.spec.ts` and `tests/component/EditingSteps.spec.ts`
+- [x] T076 [US1] Implement normalized corner placement and non-overlap enforcement in
+  `src/domain/overlays/placement.ts`, overlay records, and workspace update paths
+- [x] T077 [US1] Refactor the workspace into `Photo`, `Coordinate`, `Text`, and `Export` step pages
+  with fixed Previous/Next navigation and compact application status
+- [x] T078 [US2] Implement single/multiple coordinate-format selection and independent four-corner
+  controls for coordinate and text groups
+- [x] T079 Update specification, plan, data model, contract, ADR, and English UI documentation; run
+  focused interaction tests plus provided-photo visual checks at 375×812, 768×1024, and 1280×800
+
 ---
 
 ## Dependencies and Execution Order

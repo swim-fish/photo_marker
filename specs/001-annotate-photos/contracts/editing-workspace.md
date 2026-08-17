@@ -7,15 +7,19 @@ export review, and export renderer. Only one photo is active at a time. Every ph
 icon status: `Ready`, `Missing coordinate`, `Invalid`, `Exported`, or `Failed`.
 
 Canvas MAY render a preview but MUST NOT be the only way to select, understand, move, resize, edit,
-or remove an overlay. The semantic overlay list and inspector are the accessible interaction surface.
+or remove an overlay. The semantic overlay list and controls are the accessible interaction surface.
+
+The application exposes four steps: `Photo`, `Coordinate`, `Text`, and `Export`. Only the active step
+page is rendered in the content area; named step buttons and fixed Previous/Next actions change the
+active step.
 
 ## Responsive regions
 
 | Width | Layout |
 |-------|--------|
-| `<768 CSS px` | Status, horizontal photo strip, preview stage, inspector tabs/non-modal drawer, sticky actions |
-| `768–1023 CSS px` | Two-region workspace with navigator/stage and inspector |
-| `≥1024 CSS px` | Photo rail, preview stage, persistent inspector |
+| `<768 CSS px` | One active step page; stage and controls stack; fixed Previous/Next actions |
+| `768–1023 CSS px` | One active step page with compact stage/control columns when space permits |
+| `≥1024 CSS px` | One active step page with wider stage/control columns |
 
 Functional reflow floor is 320 CSS px. Required fixtures are 320×568, 568×320, 1024×768, and
 1280×720 at 400% browser zoom. Only the intrinsically two-dimensional image work surface may scroll
@@ -28,7 +32,7 @@ independently from viewport width.
 |--------------|-------------------|
 | Empty | Import CTA, formats/limits, resume/discard draft when present |
 | Importing | `n of total`, current filename, cancel, per-item failures without losing successes |
-| Editor | Offline/draft status, photo navigator, stage, Coordinate/Overlays/Export tabs, Review export action and disabled reason |
+| Editor | Offline/draft status, four named steps, active step page, fixed Previous/Next actions, and Export-step disabled reason |
 | Export review | Per-item Ready/Omit/Needs resolution, metadata choice, format fallback, explicit confirmation |
 | Export progress/result | Per-photo progress, durable successes/failures, retry failed items |
 | Map consent | Provider/network disclosure, explicit accept/decline, no request before acceptance |
@@ -52,8 +56,15 @@ the map is mounted, and revocation is reachable from the preview and settings.
 
 ## Overlay interaction
 
+- Coordinate display supports single- and multiple-format selection.
+- Coordinate and text groups independently select `top-left`, `top-right`, `bottom-left`, or
+  `bottom-right`.
+- Same-corner items pack from the outer edge toward the center with a normalized safety gap.
+- An add, corner/format change, drag, keyboard/numeric move, or resize that would overlap another
+  overlay retains the prior valid geometry and announces an actionable message.
 - Pointer drag/resize is a convenience, not the sole method.
-- Inspector controls provide numeric position/size, move directions, resize/text-size steps, and remove.
+- Collapsed precise controls provide numeric position/size, move directions, resize/text-size steps,
+  and remove.
 - Default movement is 1%; accelerated (`Shift+Arrow`) movement is 5%; all results clamp to image bounds.
 - Direct, step-button, and keyboard operations update the same normalized geometry.
 - Interactive target design is 44×44 CSS px and must meet WCAG 2.2 AA minimum sizing/spacing.
@@ -74,8 +85,9 @@ the map is mounted, and revocation is reachable from the preview and settings.
 
 ## Focused validation
 
-Run the single-photo happy path with touch and keyboard-only input; validate pointer, tap-only, and
-keyboard overlay manipulation; inspect the four viewport/zoom fixtures; perform one desktop and one
+Run the single-photo happy path with touch and keyboard-only input; validate pointer, tap-only,
+keyboard overlay manipulation, single/multiple coordinates, four-corner packing, and rejected
+overlap; inspect the phone/tablet/desktop fixtures; perform one desktop and one
 mobile screen-reader smoke path; run a 20-photo navigator/result scenario with one invalid item; and
 inspect map consent, open, offline, provider-error, close, and revoke states without coordinate
 mutation. Visual inspection is required for preview/export equivalence and all documented states.

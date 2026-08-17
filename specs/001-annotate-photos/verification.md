@@ -404,3 +404,43 @@ clarify the approved security/compatibility boundary without adding a dependency
 metadata/output failures, additive recovery behavior, awaited partial-result checkpoints, share-intake
 validation, scaled preview fidelity, 44 px effective targets, and the implemented tap/inspector/
 keyboard interaction rather than claiming an unimplemented direct-drag path.
+
+## 2026-08-17 Guided Four-Corner Editing Verification
+
+### Red-Green-Refactor evidence
+
+- RED — `tests/unit/overlays/placement.spec.ts` and `tests/component/EditingSteps.spec.ts` failed
+  because corner placement and four-step UI modules did not exist.
+- GREEN — deterministic outer-inward placement, collision rejection, four-step navigation,
+  single/multiple coordinate formats, and independent coordinate/text corners made all 7 focused
+  tests pass.
+- REFACTOR — the former long three-column/tab workspace was replaced with one active step page and a
+  fixed Previous/Next bar; typecheck and lint remained green after removing legacy styles.
+
+### Checks and outcomes
+
+| Check | Outcome |
+| --- | --- |
+| Focused placement/component tests | PASS — 2 files, 7 tests |
+| Full Vitest regression suite | PASS — 38 files, 199 tests |
+| Responsive interaction Playwright | PASS — 9 tests across desktop Chrome and Pixel 5 emulation; 3 intentional project-scope skips |
+| Single-photo keyboard and coordinate/map journeys | PASS — 5 desktop journeys |
+| Batch export and draft recovery journeys | PASS — 2 desktop journeys, including 20 valid plus 1 invalid item |
+| Provided JPEG visual workflow | PASS — 375×812, 768×1024, and 1280×800; no horizontal overflow or overlay intersection |
+| TypeScript/Svelte typecheck | PASS — 0 errors, 0 warnings |
+| ESLint | PASS — 0 warnings |
+| Prettier format check | PASS — all matched files formatted |
+| Production build | PASS — 12 precache entries, 1,558.87 KiB; service worker 3.59 KiB gzip; Leaflet 43.38 KiB gzip |
+
+No prolonged performance test was run because this interaction/layout change does not alter the
+image decode, renderer, encoder, or batch-processing path. Existing T068 representative-device work
+remains separately open. Physical touch, installed-PWA, and screen-reader checks remain covered by
+the existing T054 blocker; emulation is not reported as physical-device evidence.
+
+**ADR impact: amended.** ADR-0001 now records the four-step application flow, deterministic
+four-corner packing, collision rejection, additive optional overlay fields, legacy defaults, and
+rollback behavior.
+
+**UI documentation impact: amended.** `docs/ui/photo-annotation-workspace.md` now defines the active
+step layout, fixed navigation, single/multiple coordinate selection, four-corner outer-inward
+placement, collision handling, responsive fixtures, and collapsed precise-adjustment controls.

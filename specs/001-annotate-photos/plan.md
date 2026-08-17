@@ -101,8 +101,10 @@ read-only, role-specific review with non-overlapping scopes before release.
    MIT notices and vectors.
 4. Persist compressed sources and canonical editor state transactionally in IndexedDB. Storage
    persistence is requested but never promised; quota or eviction risk is visible to the user.
-5. Use normalized display-oriented overlay geometry and one layout/text-measurement implementation
-   for DOM-accessible editing, preview, and export. For same-format metadata-preserving output,
+5. Use a four-step application flow and normalized display-oriented overlay geometry. Single or
+   multiple coordinate formats and text groups choose one of four corners; deterministic outer-edge
+   packing and collision rejection keep every overlay non-overlapping. Use one layout/text-measurement
+   implementation for DOM-accessible editing, preview, and export. For same-format metadata-preserving output,
    inverse-map overlay geometry into a raw-dimension canvas and retain the source orientation. For a
    format change or metadata removal, bake orientation into upright pixels and disclose the changed
    dimensions/orientation. Full-resolution work runs one photo at a time in a worker, with the same
