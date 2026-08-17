@@ -9,3 +9,4 @@ docs/
 specs/
 static/fonts/*.woff
 static/fonts/*.woff2
+tests/unit/fixtures/test-vectors.json

@@ -5,7 +5,9 @@
     CoordinateRecord,
     Wgs84Coordinate,
   } from '../../domain/coordinates/types';
-  import Wgs84Input from './Wgs84Input.svelte';
+  import type { ParsedCoordinate } from '../../domain/coordinates/parseCoordinateInput';
+  import CoordinateFormatSelector from './CoordinateFormatSelector.svelte';
+  import CoordinateInput from './CoordinateInput.svelte';
 
   const t = messages.en;
 
@@ -16,8 +18,13 @@
     locationBusy?: boolean;
     locationError?: string;
     manualError?: string;
+    displayText?: string;
     onUseCurrentLocation?: () => void;
-    onManualSubmit?: (coordinate: Wgs84Coordinate) => void;
+    onManualAccepted?: (coordinate: ParsedCoordinate) => void;
+    onDisplayChange?: (selection: {
+      format: CoordinateRecord['displayFormat'];
+      precision: number | null;
+    }) => void;
   };
 
   let {
@@ -27,8 +34,10 @@
     locationBusy = false,
     locationError = '',
     manualError = '',
+    displayText = '',
     onUseCurrentLocation = () => undefined,
-    onManualSubmit = () => undefined,
+    onManualAccepted = () => undefined,
+    onDisplayChange = () => undefined,
   }: CoordinateCardProps = $props();
 
   function provenanceLabel(provenance: CoordinateProvenance | undefined): string {
@@ -76,6 +85,12 @@
       <dt>{t.displayFormat}</dt>
       <dd>{coordinate?.displayFormat ?? t.wgs84Dd}</dd>
     </div>
+    {#if coordinate && displayText}
+      <div>
+        <dt>{t.displayValue}</dt>
+        <dd>{displayText}</dd>
+      </div>
+    {/if}
     <div>
       <dt>{t.validation}</dt>
       <dd>{coordinate?.validationStatus ?? t.missing}</dd>
@@ -126,6 +141,9 @@
   {#if locationError}
     <p class="error" role="alert">{locationError}</p>
   {/if}
+  {#if manualError}
+    <p class="error" role="alert">{manualError}</p>
+  {/if}
 
   <button
     type="button"
@@ -137,13 +155,16 @@
     {locationBusy ? t.requestCurrentLocation : t.useCurrentLocation}
   </button>
 
-  <Wgs84Input
-    latitude={coordinate?.latitude}
-    longitude={coordinate?.longitude}
-    error={manualError}
-    {disabled}
-    onSubmitCoordinate={onManualSubmit}
-  />
+  {#if coordinate}
+    <CoordinateFormatSelector
+      format={coordinate.displayFormat}
+      precision={coordinate.precision}
+      {disabled}
+      onChange={onDisplayChange}
+    />
+  {/if}
+
+  <CoordinateInput {disabled} onAccepted={onManualAccepted} />
 </section>
 
 <style>

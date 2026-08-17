@@ -1,16 +1,27 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
 
   import CoordinateCard from '../coordinate/CoordinateCard.svelte';
   import ExportReview from '../export/ExportReview.svelte';
   import ExportResults from '../export/ExportResults.svelte';
   import ExportSettings from '../export/ExportSettings.svelte';
+  import MapConsent from '../map/MapConsent.svelte';
+  import MapPreview from '../map/MapPreview.svelte';
   import OverlayInspector from '../overlays/OverlayInspector.svelte';
   import OverlayList from '../overlays/OverlayList.svelte';
   import type { CoordinateRecord, Wgs84Coordinate } from '../../domain/coordinates/types';
+  import { formatCoordinate } from '../../domain/coordinates/formatCoordinate';
+  import type { ParsedCoordinate } from '../../domain/coordinates/parseCoordinateInput';
   import { replaceWorkingCoordinate } from '../../domain/coordinates/workingCoordinate';
   import { exportPhoto } from '../../domain/export/exportPhoto';
   import type { ExportConfiguration, ExportResult } from '../../domain/export/types';
+  import {
+    grantMapConsent,
+    MAP_CONSENT_POLICY_VERSION,
+    readMapConsent,
+    revokeMapConsent,
+  } from '../../domain/map/mapConsent';
+  import type { MapNetworkConsent } from '../../domain/map/types';
   import {
     createOverlay,
     moveOverlay,
@@ -19,6 +30,7 @@
     resizeOverlay,
     updateOverlay,
   } from '../../domain/overlays/overlayEditor';
+  import { formatCoordinateOverlay } from '../../domain/overlays/coordinateOverlay';
   import type { OverlayRole, TextOverlay } from '../../domain/overlays/types';
   import { importPhoto } from '../../domain/photos/importPhoto';
   import type { SourcePhoto } from '../../domain/photos/types';
@@ -48,6 +60,16 @@
   let reviewOpen = $state(false);
   let outputName = $state('');
   let exportResults = $state<ExportResult[]>([]);
+  let mapConsent = $state<MapNetworkConsent>({
+    policyVersion: MAP_CONSENT_POLICY_VERSION,
+    status: 'unknown',
+    providerId: 'nlsc-emap5',
+    grantedAt: null,
+    revokedAt: null,
+  });
+  let mapConsentOpen = $state(false);
+  let mapPreviewOpen = $state(false);
+  let isOnline = $state(true);
   let statusMessage = $state<string>(t.readyStatus);
 
   const selectedOverlay = $derived(
@@ -75,6 +97,14 @@
           ? t.chooseMetadataOrSourceFormat
           : '',
   );
+  const displayText = $derived.by(() => {
+    if (!coordinate) return '';
+    const result = formatCoordinate(coordinate, coordinate.displayFormat, {
+      zone: coordinate.zone,
+      precision: coordinate.precision,
+    });
+    return result.ok ? result.value.text : '';
+  });
 
   function nextId(prefix: string): string {
     return typeof crypto.randomUUID === 'function'
@@ -86,6 +116,19 @@
     if (photoUrl) URL.revokeObjectURL(photoUrl);
     photoUrl = '';
   }
+
+  onMount(() => {
+    mapConsent = readMapConsent(localStorage);
+    isOnline = navigator.onLine;
+    const handleOnline = () => (isOnline = true);
+    const handleOffline = () => (isOnline = false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  });
 
   onDestroy(revokePhotoUrl);
 
@@ -134,7 +177,7 @@
         : value.provenance === 'CURRENT_GPS'
           ? t.currentGps
           : t.manualInput;
-    return `${label}: ${value.latitude.toFixed(6)}, ${value.longitude.toFixed(6)}`;
+    return formatCoordinateOverlay(value, label);
   }
 
   function syncCoordinateOverlay(value: CoordinateRecord): void {
@@ -201,16 +244,75 @@
     statusMessage = `${result.value.sourceName} ${t.importedLocallySuffix}`;
   }
 
-  function handleManualCoordinate(value: Wgs84Coordinate): void {
-    const accepted = acceptedCoordinate(value, 'MANUAL_INPUT');
-    if (!accepted) {
+  function handleManualCoordinate(value: ParsedCoordinate): void {
+    if (!photo) return;
+    const result = replaceWorkingCoordinate(coordinate, {
+      id: nextId('coordinate'),
+      photoId: photo.id,
+      latitude: value.latitude,
+      longitude: value.longitude,
+      provenance: 'MANUAL_INPUT',
+      inputFormat: value.inputFormat,
+      displayFormat: value.displayFormat,
+      zone: value.zone,
+      zoneAutoResolved: value.zoneAutoResolved,
+      precision: value.precision,
+    });
+    if (!result.ok) {
       manualError = t.validWgs84;
       return;
     }
-    coordinate = accepted;
+    coordinate = result.value;
     manualError = '';
-    syncCoordinateOverlay(accepted);
+    syncCoordinateOverlay(result.value);
     statusMessage = t.manualWorkingCoordinateAccepted;
+  }
+
+  function handleDisplayChange(selection: {
+    format: CoordinateRecord['displayFormat'];
+    precision: number | null;
+  }): void {
+    if (!coordinate) return;
+    const result = formatCoordinate(coordinate, selection.format, {
+      zone: coordinate.zone,
+      precision: selection.precision,
+    });
+    if (!result.ok) {
+      manualError = t.displayFormatUnavailable;
+      return;
+    }
+    coordinate = {
+      ...coordinate,
+      displayFormat: selection.format,
+      zone: coordinate.zoneAutoResolved ? coordinate.zone : result.value.zone,
+      zoneAutoResolved: coordinate.zoneAutoResolved,
+      precision: result.value.precision,
+      coverageStatus: result.value.coverageStatus,
+    };
+    manualError = '';
+    syncCoordinateOverlay(coordinate);
+    statusMessage = t.displayFormatUpdated;
+  }
+
+  function requestMapPreview(): void {
+    if (!coordinateReady || !coordinate) return;
+    if (mapConsent.status === 'granted') {
+      mapPreviewOpen = true;
+      return;
+    }
+    mapConsentOpen = true;
+  }
+
+  function acceptMapConsent(): void {
+    mapConsent = grantMapConsent(localStorage);
+    mapConsentOpen = false;
+    mapPreviewOpen = true;
+  }
+
+  function revokeMapNetworkConsent(): void {
+    mapConsent = revokeMapConsent(localStorage);
+    mapPreviewOpen = false;
+    statusMessage = t.mapConsentRevokedMessage;
   }
 
   async function handleCurrentLocation(): Promise<void> {
@@ -426,12 +528,20 @@
         {#if inspectorTab === 'coordinate'}
           <CoordinateCard
             {coordinate}
+            {displayText}
             captureCoordinate={photo.metadataSummary.captureGps}
             {locationError}
             {manualError}
             onUseCurrentLocation={handleCurrentLocation}
-            onManualSubmit={handleManualCoordinate}
+            onManualAccepted={handleManualCoordinate}
+            onDisplayChange={handleDisplayChange}
           />
+          <button
+            type="button"
+            class="map-action"
+            disabled={!coordinateReady}
+            onclick={requestMapPreview}>{t.previewOnMap}</button
+          >
         {:else if inspectorTab === 'overlays'}
           <div class="add-overlays" aria-label={t.addTextOverlayLabel}>
             <button type="button" onclick={() => addOverlay('title')}>{t.addTitle}</button>
@@ -494,6 +604,23 @@
       onClose={() => (reviewOpen = false)}
       onConfirm={confirmExport}
     />
+
+    <MapConsent
+      open={mapConsentOpen}
+      onAccept={acceptMapConsent}
+      onDecline={() => (mapConsentOpen = false)}
+    />
+
+    {#if mapPreviewOpen && coordinate}
+      {#key `${isOnline}:${coordinate.latitude}:${coordinate.longitude}`}
+        <MapPreview
+          center={{ latitude: coordinate.latitude, longitude: coordinate.longitude }}
+          online={isOnline}
+          onClose={() => (mapPreviewOpen = false)}
+          onRevoke={revokeMapNetworkConsent}
+        />
+      {/key}
+    {/if}
   {/if}
 </main>
 
@@ -563,6 +690,7 @@
 
   .tabs button,
   .add-overlays button,
+  .map-action,
   .primary,
   .secondary {
     min-height: 44px;
@@ -585,6 +713,10 @@
     color: #94a3b8;
     background: #1e293b;
     cursor: not-allowed;
+  }
+
+  .map-action {
+    width: fit-content;
   }
 
   .primary-actions {
