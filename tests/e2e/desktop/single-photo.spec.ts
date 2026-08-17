@@ -35,8 +35,27 @@ test.describe('single-photo desktop journey', () => {
       buffer: Buffer.from('deterministic unsupported fixture'),
     });
 
-    await expect(page.getByRole('alert')).toContainText(/unsupported|format/i);
+    await expect(page.getByRole('alert')).toHaveText('This photo format is not supported.');
+    await expect(page.getByRole('alert')).not.toContainText('unsupported-format');
     await expect(page.getByRole('button', { name: 'Review export' })).toBeDisabled();
+  });
+
+  test('shows a safe message instead of a malformed metadata diagnostic code', async ({
+    page,
+    viewportKind,
+  }) => {
+    test.skip(viewportKind !== 'desktop', 'This journey is scoped to the desktop project.');
+    await blockExternalRequests(page);
+    await page.goto('/');
+
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'truncated.jpg',
+      mimeType: 'image/jpeg',
+      buffer: Buffer.from([0xff, 0xd8, 0xff, 0xe1, 0x00, 0x40, 0x45, 0x78, 0x69, 0x66]),
+    });
+
+    await expect(page.getByRole('alert')).toHaveText('The photo metadata is malformed.');
+    await expect(page.getByRole('alert')).not.toContainText('malformed-metadata');
   });
 
   test('completes import, review, and export with keyboard-only actions', async ({

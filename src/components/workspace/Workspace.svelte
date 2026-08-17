@@ -61,6 +61,7 @@
   } from '../../domain/photos/batchSession';
   import type { SourcePhoto } from '../../domain/photos/types';
   import { requestCurrentLocation } from '../../infrastructure/platform/geolocation';
+  import { sanitizeDiagnostic } from '../../infrastructure/platform/diagnostics';
   import {
     consumeSharedFiles,
     DraftRepository,
@@ -571,7 +572,9 @@
 
     if (photos.length === 0) {
       viewState = 'error';
-      errorMessage = invalidItems[0]?.failureCode ?? t.photoImportFailed;
+      errorMessage = invalidItems[0]
+        ? sanitizeDiagnostic(invalidItems[0].failureCode).message
+        : t.photoImportFailed;
       statusMessage = t.photoImportFailed;
       return;
     }
@@ -815,6 +818,14 @@
     if (!selectedOverlayId) return;
     overlays = overlays.map((overlay) =>
       overlay.id === selectedOverlayId ? updateOverlay(overlay, update) : overlay,
+    );
+    scheduleCurrentDraft();
+  }
+
+  function updateById(overlayId: string, update: Partial<TextOverlay>): void {
+    selectedOverlayId = overlayId;
+    overlays = overlays.map((overlay) =>
+      overlay.id === overlayId ? updateOverlay(overlay, update) : overlay,
     );
     scheduleCurrentDraft();
   }
@@ -1253,6 +1264,7 @@
           inspectorTab = 'overlays';
         }}
         onMove={moveById}
+        onUpdate={updateById}
       />
 
       <aside class="inspector" aria-label={t.photoInspectorLabel}>
@@ -1386,6 +1398,7 @@
   .workspace {
     display: grid;
     min-height: 100vh;
+    align-content: start;
     gap: 1rem;
     padding: clamp(1rem, 2vw, 1.5rem);
   }
@@ -1485,8 +1498,6 @@
   }
 
   .primary-actions {
-    position: sticky;
-    bottom: 0;
     padding: 0.75rem 0;
     background: #070b14;
   }
@@ -1522,7 +1533,16 @@
     }
 
     .primary-actions {
+      position: sticky;
+      bottom: 0;
       z-index: 5;
+    }
+
+    .inspector :global(input),
+    .inspector :global(textarea),
+    .inspector :global(select),
+    .inspector :global(button) {
+      scroll-margin-bottom: 5rem;
     }
   }
 </style>

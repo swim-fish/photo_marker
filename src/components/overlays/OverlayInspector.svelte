@@ -153,6 +153,10 @@
     min-height: 44px;
   }
 
+  button {
+    min-width: 44px;
+  }
+
   textarea {
     min-height: 5rem;
   }

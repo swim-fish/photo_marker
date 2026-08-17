@@ -37,13 +37,16 @@ two-dimensional page scrolling or blocking overlap. The image work surface may p
 when zoom makes that necessary. Pointer capability is detected independently from viewport width.
 
 Interactive targets are designed at 44×44 CSS px and must never fall below WCAG 2.2 AA target-size or
-spacing requirements. Sticky actions and drawers must not fully obscure the focused control.
+spacing requirements. Only the mobile arrangement uses a sticky primary action; tablet and desktop
+actions remain in normal flow. Sticky actions and drawers must not obscure the focused control.
 
 ## Screen contracts
 
 ### Empty workspace
 
 - Show a primary `Import photos` action, JPEG/PNG support, 1–20 limit, and local-only statement.
+- Keep the empty header, status, and import regions content-sized and aligned to the start of the
+  workspace instead of stretching them to fill a tall viewport.
 - When a restorable draft exists, show `Resume draft` as the primary recovery action and a distinct
   destructive `Discard draft` action with confirmation.
 - Never present an unexplained empty canvas.
@@ -54,6 +57,8 @@ spacing requirements. Sticky actions and drawers must not fully obscure the focu
 - State the enforced per-photo limits: JPEG/PNG, 32 MiB compressed, 13 MP, and 8192 px per axis.
 - Keep successful items if one item is unsupported, corrupt, or over limit.
 - Associate the failure with the affected item and offer remove/replace.
+- Present a localized, user-safe failure message; do not expose internal diagnostic codes as the
+  visible error text.
 - Preserve selected Files if offline readiness is incomplete and explain the missing readiness step.
 
 ### Editor
@@ -139,13 +144,17 @@ entry. The app never presents processing location as capture metadata.
 
 ## Overlay interaction
 
-The overlay list is the semantic selection surface. Each row has an accessible name, role/content
-summary, selected state, and remove action. The inspector provides content, role, normalized/numeric
-position and size, text size, text/background color, ordering, and contrast status.
+The overlay list remains the semantic selection surface. Each row has an accessible name,
+role/content summary, selected state, and remove action. Selecting text on the photo opens a quick
+editor directly below the preview. The quick editor exposes the text, text color, background color,
+and clearly labelled `A−`/`A+` text-size controls. A tap or click that does not become a drag moves
+focus to the text field so editing can begin immediately.
 
-The required MVP path uses tap/click selection plus the inspector controls below. Direct pointer drag
-or resize may be added later only as an accelerator; it is not required to complete the workflow.
-Equivalent touch, mouse, and keyboard controls include:
+Touch, pen, and mouse users drag selected text directly on the photo. Movement begins only after a
+4 CSS px threshold so an ordinary tap remains an edit action. The pointer delta is converted to the
+same normalized coordinates used by export, and the result is clamped inside the image. The existing
+inspector remains available for precise numeric position and box-size adjustments. Equivalent
+keyboard and explicit-button controls include:
 
 - Move up/down/left/right buttons.
 - Numeric position and size fields.
@@ -155,8 +164,9 @@ Equivalent touch, mouse, and keyboard controls include:
 
 All paths update the same normalized state and clamp overlays inside image bounds. Focus and selection
 use distinct indicators visible on light and dark photos. Overlay selection retains a 44 px effective
-hit area without changing normalized output geometry. Pinch is not the only zoom method. The current
-tap/inspector path does not restrict `touch-action`, so page pan and browser zoom remain available.
+hit area without changing normalized output geometry. Direct-drag targets use `touch-action: none`
+only within the overlay hit area; page pan and browser zoom remain available elsewhere, and explicit
+zoom buttons remain available.
 
 Low text/background contrast shows a warning and offers safe presets. User colors are not silently
 changed. Preview and export use the same bundled fonts and renderer geometry; Unicode, Taiwan
