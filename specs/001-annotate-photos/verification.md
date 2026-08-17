@@ -222,3 +222,78 @@ tradeoff was introduced.
 **UI documentation impact: none.** The implemented offline readiness, saving/storage failures,
 recovery dialog, install guidance, and adaptive layouts match the English states and behavior already
 documented in `docs/ui/photo-annotation-workspace.md`.
+
+## Phase 6 — Batch Annotation and Sequential Export
+
+**Scope**: T055–T063, including 1–20 editable photos, explicit invalid intake results, duplicate-safe
+identity, shared-setting copies, independent coordinate decisions, sequential export, partial result
+retention/retry, and additive batch draft recovery.
+
+### Red-Green-Refactor evidence
+
+- RED — batch session and export suites first failed because `batchSession.ts` and `batchExport.ts`
+  did not exist; navigator/settings/review/results tests likewise failed before their components were
+  added.
+- RED — the first 20-valid-plus-1-invalid browser run classified the final invalid file as
+  `over-limit`, because the accepted-count check ran before format validation. Intake now validates
+  first and applies the 20-item limit only to otherwise valid photos, preserving the actual
+  `unsupported-format` result.
+- GREEN — the focused batch/domain/export/component/storage run passes 4 files and 20 tests. The
+  20+1 browser journey and a separate multi-photo draft reload journey both pass.
+
+### Automated and browser checks
+
+| Check | Outcome |
+| --- | --- |
+| Batch session/export/component tests plus additive draft recovery | PASS — 4 files, 20 tests |
+| 20 valid + 1 invalid desktop journey | PASS — 20 `handedOff`, 1 explicit `unsupported-format`, no crash or source loss |
+| Multi-photo draft reload | PASS — 2 photos and copied shared title restored |
+| Desktop single-photo/coordinate/batch regression | PASS — 6 journeys |
+| Production offline desktop/mobile regression | PASS — 2 scoped journeys; 2 opposite-project skips |
+| Full Vitest regression suite | PASS — 31 files, 173 tests |
+| TypeScript/Svelte typecheck | PASS — 0 errors, 0 warnings |
+| ESLint and Prettier | PASS — 0 lint warnings; all matched files formatted |
+| Production build | PASS — 12 shell entries, 1,533.49 KiB; app 130.94 KiB gzip; service worker 3.37 KiB gzip |
+
+### First-functional batch reliability baseline
+
+One desktop Chrome run against the local Vite application completed intake, copied title/team
+settings, 20 explicit coordinate-free decisions, 20 sequential output handoffs, and one invalid
+result in **3.6 seconds** of Playwright test time. This is a diagnostic first-functional baseline, not
+a representative-device performance claim. Per the approved plan, no arbitrary batch-duration gate,
+soak test, or broad benchmark was added; the measured criterion is sequential completion without
+crash or result loss.
+
+Chrome emitted only a subset of automatic download events in an earlier run while the application
+recorded all 20 browser handoffs. This is consistent with the documented `handedOff` contract: it
+means the Blob was offered to the browser/OS, not that a filesystem path was written. Users may need
+to allow multiple downloads. The UI and results do not claim confirmed disk writes.
+
+### Visual and interaction inspection
+
+- PASS — 1440×900 production layout shows the vertical photo rail, active/missing/invalid text and
+  icons, explicit failure code, preview, inspector, and import fallback without overlap.
+- PASS — 393×852 production layout has no horizontal document overflow. The navigator becomes a
+  horizontally scrollable strip, while preview, tabs, coordinate controls, and the primary action
+  remain reachable.
+- PASS — the review dialog blocks export until every missing coordinate is resolved, explicitly
+  omitted, or approved for coordinate-free export. Shared values are copied per photo rather than
+  sharing mutable overlay records.
+
+### Remaining risks
+
+- The final representative-device 20-photo comparison remains assigned to T068. This phase used the
+  small deterministic PNG fixture and did not repeat the 12 MP single-photo performance scenario.
+- Physical-device multi-download permissions and actual filesystem results remain browser/OS-owned;
+  output status intentionally stops at `handedOff`.
+- T054's physical Android/Windows, Web Share Target, 400% zoom, and screen-reader release blockers
+  remain unchanged.
+
+**ADR impact: none.** Batch session, sequential concurrency-one export, additive draft fields, and
+handoff semantics were already approved in ADR-0001 and the data model. No new architecture,
+dependency strategy, public contract, migration policy, security boundary, or performance tradeoff
+was introduced.
+
+**UI documentation impact: none.** The photo strip/rail, text-and-icon statuses, shared-setting copy
+semantics, unresolved decisions, partial results, retry, responsive behavior, and browser-handoff
+wording match `docs/ui/photo-annotation-workspace.md`.

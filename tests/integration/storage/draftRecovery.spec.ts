@@ -77,6 +77,39 @@ describe('draft recovery integration', () => {
     expect(restored.value.photos[0].sourceBlob.type).toBe('image/png');
   });
 
+  it('restores additive batch decisions, invalid intake, and partial results', async () => {
+    await deleteDraftDatabase();
+    const snapshot: DraftSnapshot = {
+      ...createSnapshot(new Blob(['batch'], { type: 'image/png' })),
+      batchInvalidItems: [
+        { id: 'invalid-batch-item', sourceName: 'broken.txt', failureCode: 'unsupported-format' },
+      ],
+      batchDecisions: [{ photoId, decision: 'withoutCoordinate' }],
+      exportResults: [
+        {
+          photoId,
+          status: 'failed',
+          outputName: null,
+          outputMime: null,
+          outputBytes: null,
+          saveMethod: null,
+          failureCode: 'save-failed',
+          startedAt: '2026-08-17T00:00:01.000Z',
+          finishedAt: '2026-08-17T00:00:02.000Z',
+          phaseDurationsMs: {},
+        },
+      ],
+    };
+    expect((await new DraftRepository().save(snapshot)).ok).toBe(true);
+
+    const restored = await new DraftRepository().restore(sessionId);
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) return;
+    expect(restored.value.batchInvalidItems).toEqual(snapshot.batchInvalidItems);
+    expect(restored.value.batchDecisions).toEqual(snapshot.batchDecisions);
+    expect(restored.value.exportResults).toEqual(snapshot.exportResults);
+  });
+
   it('runs additive migration without deleting the previous readable revision', async () => {
     await deleteDraftDatabase();
     const repository = new DraftRepository();

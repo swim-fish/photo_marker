@@ -2,6 +2,9 @@
   import { onDestroy, onMount } from 'svelte';
 
   import CoordinateCard from '../coordinate/CoordinateCard.svelte';
+  import BatchResults from '../export/BatchResults.svelte';
+  import BatchReview from '../export/BatchReview.svelte';
+  import BatchSettings, { type SharedSettingsValue } from '../export/BatchSettings.svelte';
   import ExportReview from '../export/ExportReview.svelte';
   import ExportResults from '../export/ExportResults.svelte';
   import ExportSettings from '../export/ExportSettings.svelte';
@@ -19,6 +22,11 @@
   import { createEditingSession, editingSessionReducer } from '../../domain/drafts/editingSession';
   import type { EditingSession } from '../../domain/drafts/types';
   import { exportPhoto } from '../../domain/export/exportPhoto';
+  import {
+    exportBatchSequentially,
+    retryFailedBatchExports,
+    type BatchExportWorkItem,
+  } from '../../domain/export/batchExport';
   import type { ExportConfiguration, ExportResult } from '../../domain/export/types';
   import {
     grantMapConsent,
@@ -38,6 +46,17 @@
   import { formatCoordinateOverlay } from '../../domain/overlays/coordinateOverlay';
   import type { OverlayRole, TextOverlay } from '../../domain/overlays/types';
   import { importPhoto } from '../../domain/photos/importPhoto';
+  import {
+    applySharedBatchSettings,
+    batchExportReadiness,
+    createBatchSession,
+    selectBatchItem,
+    setBatchItemDecision,
+    updateBatchItem,
+    type BatchSession,
+    type EditableBatchItem,
+    type InvalidBatchIntake,
+  } from '../../domain/photos/batchSession';
   import type { SourcePhoto } from '../../domain/photos/types';
   import { requestCurrentLocation } from '../../infrastructure/platform/geolocation';
   import {
@@ -54,6 +73,7 @@
   import ImportPanel from './ImportPanel.svelte';
   import InstallHelp from './InstallHelp.svelte';
   import OfflineStatus from './OfflineStatus.svelte';
+  import PhotoNavigator, { type PhotoNavigatorEntry } from './PhotoNavigator.svelte';
   import PhotoStatus from './PhotoStatus.svelte';
   import PreviewStage from './PreviewStage.svelte';
   import StatusRegion from './StatusRegion.svelte';
@@ -78,6 +98,9 @@
   let reviewOpen = $state(false);
   let outputName = $state('');
   let exportResults = $state<ExportResult[]>([]);
+  let batchSession = $state<BatchSession | null>(null);
+  let batchReviewOpen = $state(false);
+  let batchTotal = $state(0);
   let draftSession = $state<EditingSession | null>(null);
   let draftStatus = $state<DraftUiStatus>('idle');
   let recoverableDraft = $state<DraftSnapshot | null>(null);
@@ -134,6 +157,8 @@
     ),
   );
   const canReview = $derived(coordinateReady && overlaysReady && configurationReady);
+  const isBatch = $derived((batchSession?.items.length ?? 0) > 1);
+  const canOpenReview = $derived(isBatch ? Boolean(batchSession) : canReview);
   const disabledReason = $derived(
     !coordinateReady
       ? t.resolveCoordinateBeforeExport
@@ -151,6 +176,100 @@
     });
     return result.ok ? result.value.text : '';
   });
+  const batchNavigatorItems = $derived.by((): PhotoNavigatorEntry[] => {
+    if (!batchSession) return [];
+    const results = new Map(exportResults.map((result) => [result.photoId, result]));
+    return batchSession.items.map((item) => {
+      if (item.kind === 'invalid') {
+        return {
+          id: item.id,
+          name: item.sourceName,
+          status: 'Invalid',
+          failureCode: item.failureCode,
+        };
+      }
+      const result = results.get(item.id);
+      const status: PhotoNavigatorEntry['status'] =
+        result?.status === 'handedOff'
+          ? 'Exported'
+          : result?.status === 'failed'
+            ? 'Failed'
+            : item.decision === 'omit'
+              ? 'Omitted'
+              : item.coordinate?.validationStatus === 'valid' ||
+                  item.decision === 'withoutCoordinate'
+                ? 'Ready'
+                : 'Missing coordinate';
+      return {
+        id: item.id,
+        name: item.sourceName,
+        status,
+        provenance: item.coordinate ? provenanceLabel(item.coordinate.provenance) : undefined,
+        failureCode: result?.failureCode ?? item.failureCode ?? undefined,
+      };
+    });
+  });
+  const batchReviewItems = $derived(
+    batchNavigatorItems.map((item) => {
+      const source = batchSession?.items.find((candidate) => candidate.id === item.id);
+      return {
+        id: item.id,
+        name: item.name,
+        status: item.status,
+        decision: source?.kind === 'editable' ? source.decision : ('required' as const),
+      };
+    }),
+  );
+  const batchResultItems = $derived.by(() => {
+    if (!batchSession) return [];
+    const results = new Map(exportResults.map((result) => [result.photoId, result]));
+    return batchSession.items.map((item) => {
+      if (item.kind === 'invalid') {
+        return {
+          id: item.id,
+          name: item.sourceName,
+          status: 'Failed' as const,
+          failureCode: item.failureCode,
+          retryable: false,
+        };
+      }
+      const result = results.get(item.id);
+      if (item.decision === 'omit' || result?.status === 'omitted') {
+        return { id: item.id, name: item.sourceName, status: 'Omitted' as const };
+      }
+      if (result?.status === 'handedOff') {
+        return {
+          id: item.id,
+          name: item.sourceName,
+          status: 'Exported' as const,
+          outputName: result.outputName ?? undefined,
+        };
+      }
+      if (result?.status === 'cancelled') {
+        return {
+          id: item.id,
+          name: item.sourceName,
+          status: 'Cancelled' as const,
+          failureCode: result.failureCode ?? undefined,
+        };
+      }
+      return {
+        id: item.id,
+        name: item.sourceName,
+        status: 'Failed' as const,
+        failureCode: result?.failureCode ?? 'not-exported',
+        retryable: true,
+      };
+    });
+  });
+
+  function provenanceLabel(provenance: CoordinateRecord['provenance']): string {
+    return provenance === 'CAPTURE_METADATA'
+      ? t.captureMetadata
+      : provenance === 'CURRENT_GPS'
+        ? t.currentGps
+        : t.manualInput;
+  }
 
   function nextId(prefix: string): string {
     return typeof crypto.randomUUID === 'function'
@@ -163,15 +282,61 @@
     photoUrl = '';
   }
 
+  function syncActiveBatchItem(): void {
+    if (!batchSession || !photo || !configuration) return;
+    const existing = batchSession.items.find(
+      (item): item is EditableBatchItem => item.kind === 'editable' && item.id === photo?.id,
+    );
+    if (!existing) return;
+    const result = exportResults.find((entry) => entry.photoId === photo?.id);
+    const reviewStatus =
+      result?.status === 'handedOff'
+        ? 'exported'
+        : result?.status === 'failed'
+          ? 'failed'
+          : existing.decision === 'omit'
+            ? 'omitted'
+            : coordinate?.validationStatus === 'valid' || existing.decision === 'withoutCoordinate'
+              ? 'ready'
+              : 'missingCoordinate';
+    batchSession = updateBatchItem(batchSession, photo.id, {
+      photo: {
+        ...photo,
+        coordinateId: coordinate?.id ?? null,
+        overlayIds: overlays.map((overlay) => overlay.id),
+        reviewStatus,
+        failureCode: result?.failureCode ?? null,
+      },
+      coordinate,
+      overlays: [...overlays],
+      configuration,
+      status: reviewStatus,
+      failureCode: result?.failureCode ?? null,
+    });
+  }
+
   function currentDraftSnapshot(): DraftSnapshot | null {
-    if (!draftSession || !photo || !configuration) return null;
+    syncActiveBatchItem();
+    if (!draftSession || !batchSession) return null;
+    const editableItems = batchSession.items.filter(
+      (item): item is EditableBatchItem => item.kind === 'editable',
+    );
     return $state.snapshot({
       session: draftSession,
-      photos: [photo],
-      coordinates: coordinate ? [coordinate] : [],
-      overlays,
-      exportConfigurations: [configuration],
+      photos: editableItems.map((item) => item.photo),
+      coordinates: editableItems.flatMap((item) => (item.coordinate ? [item.coordinate] : [])),
+      overlays: editableItems.flatMap((item) => item.overlays),
+      exportConfigurations: editableItems.flatMap((item) =>
+        item.configuration ? [item.configuration] : [],
+      ),
       exportResults,
+      batchInvalidItems: batchSession.items
+        .filter((item) => item.kind === 'invalid')
+        .map(({ id, sourceName, failureCode }) => ({ id, sourceName, failureCode })),
+      batchDecisions: editableItems.map((item) => ({
+        photoId: item.id,
+        decision: item.decision,
+      })),
     }) as DraftSnapshot;
   }
 
@@ -254,14 +419,15 @@
     };
   }
 
-  function acceptedCoordinate(
+  function acceptedCoordinateFor(
+    source: SourcePhoto,
+    previous: CoordinateRecord | null,
     value: Wgs84Coordinate,
     provenance: 'CAPTURE_METADATA' | 'MANUAL_INPUT',
   ): CoordinateRecord | null {
-    if (!photo) return null;
-    const result = replaceWorkingCoordinate(coordinate, {
+    const result = replaceWorkingCoordinate(previous, {
       id: nextId('coordinate'),
-      photoId: photo.id,
+      photoId: source.id,
       latitude: value.latitude,
       longitude: value.longitude,
       provenance,
@@ -310,60 +476,171 @@
     selectedOverlayId = overlay.id;
   }
 
-  async function handleFiles(files: FileList): Promise<void> {
-    const selected = files.item(0);
-    if (!selected) return;
-    viewState = 'loading';
-    statusMessage = `${t.importProgress} ${selected.name}`;
-    errorMessage = '';
-    const result = await importPhoto(selected, {
-      id: nextId('photo'),
-      sessionId: nextId('session'),
+  function coordinateOverlayFor(value: CoordinateRecord, order = 0): TextOverlay {
+    return createOverlay({
+      id: nextId('overlay'),
+      photoId: value.photoId,
+      role: 'coordinate',
+      content: coordinateText(value),
+      fontFamily: 'Noto Sans TC',
+      fontSize: 0.035,
+      textColor: '#ffffff',
+      backgroundColor: '#111827',
+      x: 0.04,
+      y: 0.84,
+      width: 0.72,
+      height: 0.11,
+      order,
     });
-    if (!result.ok) {
+  }
+
+  async function handleFiles(files: FileList): Promise<void> {
+    if (files.length === 0) return;
+    viewState = 'loading';
+    statusMessage = `${t.importProgress} ${files.length} item(s)`;
+    errorMessage = '';
+    const sessionId = nextId('session');
+    const photos: SourcePhoto[] = [];
+    const invalidItems: InvalidBatchIntake[] = [];
+    const coordinates: CoordinateRecord[] = [];
+    const importedOverlays: TextOverlay[] = [];
+    const configurations: ExportConfiguration[] = [];
+
+    for (const selected of Array.from(files)) {
+      statusMessage = `${t.importProgress} ${selected.name}`;
+      const result = await importPhoto(selected, {
+        id: nextId('photo'),
+        sessionId,
+      });
+      if (!result.ok) {
+        invalidItems.push({
+          id: nextId('invalid'),
+          sourceName: selected.name,
+          failureCode: result.error.code,
+        });
+        continue;
+      }
+      if (photos.length >= 20) {
+        invalidItems.push({
+          id: nextId('invalid'),
+          sourceName: selected.name,
+          failureCode: 'over-limit',
+        });
+        continue;
+      }
+      photos.push(result.value);
+      configurations.push(defaultConfiguration(result.value));
+      const captureCoordinate = result.value.metadataSummary.captureGps
+        ? acceptedCoordinateFor(
+            result.value,
+            null,
+            result.value.metadataSummary.captureGps,
+            'CAPTURE_METADATA',
+          )
+        : null;
+      if (captureCoordinate) {
+        coordinates.push(captureCoordinate);
+        importedOverlays.push(coordinateOverlayFor(captureCoordinate));
+      }
+    }
+
+    if (photos.length === 0) {
       viewState = 'error';
-      errorMessage = result.error.message;
+      errorMessage = invalidItems[0]?.failureCode ?? t.photoImportFailed;
       statusMessage = t.photoImportFailed;
       return;
     }
 
-    revokePhotoUrl();
-    photo = result.value;
-    photoUrl = URL.createObjectURL(result.value.sourceBlob);
-    overlays = [];
-    selectedOverlayId = null;
-    configuration = defaultConfiguration(result.value);
+    let storageHeadroomBytes: number | undefined;
+    try {
+      const estimate = await navigator.storage?.estimate();
+      if (typeof estimate?.quota === 'number') {
+        storageHeadroomBytes = Math.max(0, estimate.quota - (estimate.usage ?? 0));
+      }
+    } catch {
+      storageHeadroomBytes = undefined;
+    }
+    const createdBatch = createBatchSession({
+      id: sessionId,
+      photos,
+      invalidItems,
+      coordinates,
+      overlays: importedOverlays,
+      configurations,
+      storageHeadroomBytes,
+    });
+    if (!createdBatch.ok) {
+      viewState = 'error';
+      errorMessage = createdBatch.error.message;
+      statusMessage = t.photoImportFailed;
+      return;
+    }
+
+    batchSession = createdBatch.value;
     outputName = '';
     exportResults = [];
-    if (result.value.metadataSummary.captureGps) {
-      coordinate = acceptedCoordinate(result.value.metadataSummary.captureGps, 'CAPTURE_METADATA');
-      if (coordinate) syncCoordinateOverlay(coordinate);
-    } else {
-      coordinate = null;
-    }
     viewState = 'editing';
-    statusMessage = `${result.value.sourceName} ${t.importedLocallySuffix}`;
+    statusMessage = `${photos.length} ${t.batchImportPhotosSuffix} ${invalidItems.length} ${t.batchImportInvalidSuffix}`;
     draftSession = editingSessionReducer(
-      createEditingSession({ id: result.value.sessionId, photoIds: [result.value.id] }),
+      createEditingSession({ id: sessionId, photoIds: photos.map((item) => item.id) }),
       { type: 'transition', status: 'editing' },
     );
+    loadBatchItem(createdBatch.value.activeItemId, false);
     scheduleCurrentDraft(false);
+  }
+
+  function loadBatchItem(itemId: string, saveCurrent = true): void {
+    if (!batchSession) return;
+    if (saveCurrent) syncActiveBatchItem();
+    const selectedSession = selectBatchItem(batchSession, itemId);
+    const item = selectedSession.items.find(
+      (candidate): candidate is EditableBatchItem =>
+        candidate.kind === 'editable' && candidate.id === itemId,
+    );
+    if (!item || !item.configuration) return;
+    batchSession = selectedSession;
+    revokePhotoUrl();
+    photo = item.photo;
+    photoUrl = URL.createObjectURL(item.photo.sourceBlob);
+    coordinate = item.coordinate;
+    overlays = [...item.overlays];
+    selectedOverlayId = overlays[0]?.id ?? null;
+    configuration = item.configuration;
+    manualError = '';
+    locationError = '';
+    inspectorTab = 'coordinate';
+    if (draftSession) {
+      draftSession = editingSessionReducer(draftSession, {
+        type: 'set-active-photo',
+        photoId: item.id,
+      });
+    }
+    if (saveCurrent) scheduleCurrentDraft();
   }
 
   function resumeRecoveredDraft(): void {
     const snapshot = recoverableDraft;
-    const restoredPhoto = snapshot?.photos[0];
-    const restoredConfiguration = snapshot?.exportConfigurations?.[0];
-    if (!snapshot || !restoredPhoto || !restoredConfiguration) return;
-    revokePhotoUrl();
-    photo = restoredPhoto;
-    photoUrl = URL.createObjectURL(restoredPhoto.sourceBlob);
-    coordinate = snapshot.coordinates?.[0] ?? null;
-    overlays = [...(snapshot.overlays ?? [])];
-    selectedOverlayId = overlays[0]?.id ?? null;
-    configuration = restoredConfiguration;
+    if (!snapshot || snapshot.photos.length === 0) return;
+    const restored = createBatchSession({
+      id: snapshot.session.id,
+      photos: snapshot.photos,
+      invalidItems: snapshot.batchInvalidItems,
+      coordinates: snapshot.coordinates,
+      overlays: snapshot.overlays,
+      configurations: snapshot.exportConfigurations,
+    });
+    if (!restored.ok) {
+      draftStatus = 'error';
+      return;
+    }
+    let restoredBatch = selectBatchItem(restored.value, snapshot.session.activePhotoId);
+    for (const entry of snapshot.batchDecisions ?? []) {
+      restoredBatch = setBatchItemDecision(restoredBatch, entry.photoId, entry.decision);
+    }
+    batchSession = restoredBatch;
     exportResults = [...(snapshot.exportResults ?? [])];
     draftSession = snapshot.session;
+    loadBatchItem(restoredBatch.activeItemId, false);
     draftStatus = 'saved';
     viewState = 'editing';
     inspectorTab = 'coordinate';
@@ -581,13 +858,212 @@
     scheduleCurrentDraft();
   }
 
+  function applySharedSettings(value: SharedSettingsValue): void {
+    if (!batchSession) return;
+    syncActiveBatchItem();
+    const sharedOverlays = [
+      ...(value.title
+        ? [
+            {
+              role: 'title' as const,
+              content: value.title,
+              fontFamily: 'Noto Sans TC',
+              fontSize: 0.06,
+              textColor: '#ffffff',
+              backgroundColor: '#111827',
+              x: 0.08,
+              y: 0.08,
+              width: 0.6,
+              height: 0.1,
+              padding: 0.012,
+              lineHeight: 1.2,
+              order: 0,
+              contrastStatus: 'acceptable' as const,
+            },
+          ]
+        : []),
+      ...(value.team
+        ? [
+            {
+              role: 'team' as const,
+              content: value.team,
+              fontFamily: 'Noto Sans TC',
+              fontSize: 0.04,
+              textColor: '#ffffff',
+              backgroundColor: '#111827',
+              x: 0.08,
+              y: 0.2,
+              width: 0.5,
+              height: 0.09,
+              padding: 0.012,
+              lineHeight: 1.2,
+              order: value.title ? 1 : 0,
+              contrastStatus: 'acceptable' as const,
+            },
+          ]
+        : []),
+    ];
+    batchSession = applySharedBatchSettings(
+      batchSession,
+      {
+        displayFormat: value.displayFormat,
+        overlayTemplate: { overlays: sharedOverlays },
+      },
+      (photoId, index) => nextId(`${photoId}-shared-${index}`),
+    );
+    batchSession = {
+      ...batchSession,
+      items: batchSession.items.map((item) =>
+        item.kind === 'editable' && item.coordinate
+          ? {
+              ...item,
+              overlays: item.overlays.map((overlay) =>
+                overlay.role === 'coordinate'
+                  ? updateOverlay(overlay, { content: coordinateText(item.coordinate!) })
+                  : overlay,
+              ),
+            }
+          : item,
+      ),
+    };
+    loadBatchItem(batchSession.activeItemId, false);
+    statusMessage = t.sharedSettingsApplied;
+    scheduleCurrentDraft();
+  }
+
+  function decideBatchItem(itemId: string, decision: 'omit' | 'withoutCoordinate'): void {
+    if (!batchSession) return;
+    syncActiveBatchItem();
+    batchSession = setBatchItemDecision(batchSession, itemId, decision);
+    scheduleCurrentDraft();
+  }
+
   async function openExportReview(): Promise<void> {
     const snapshot = currentDraftSnapshot();
     if (snapshot) {
       draftStatus = 'saving';
       await draftService.flush(snapshot);
     }
-    reviewOpen = true;
+    if (isBatch) {
+      batchReviewOpen = true;
+      if (draftSession?.status === 'editing') {
+        draftSession = editingSessionReducer(draftSession, {
+          type: 'transition',
+          status: 'reviewing',
+        });
+      }
+    } else {
+      reviewOpen = true;
+    }
+  }
+
+  function batchWorkItems(): BatchExportWorkItem[] {
+    syncActiveBatchItem();
+    if (!batchSession) return [];
+    return batchSession.items.flatMap((item) => {
+      if (item.kind !== 'editable' || !item.configuration) return [];
+      return [
+        {
+          photo: item.photo,
+          disposition: item.decision === 'omit' ? ('omit' as const) : ('export' as const),
+          overlays: item.overlays,
+          request: {
+            photoId: item.id,
+            format: item.configuration.format,
+            metadataMode: item.configuration.metadataMode,
+            quality: item.configuration.quality,
+            outputName: item.configuration.outputName,
+            saveMethod: 'download' as const,
+            fallback: item.configuration.fallback,
+          },
+        },
+      ];
+    });
+  }
+
+  async function finishBatchExport(results: readonly ExportResult[]): Promise<void> {
+    exportResults = [...results];
+    if (!batchSession) return;
+    for (const result of results) {
+      const status =
+        result.status === 'handedOff'
+          ? 'exported'
+          : result.status === 'omitted'
+            ? 'omitted'
+            : result.status === 'failed'
+              ? 'failed'
+              : 'ready';
+      batchSession = updateBatchItem(batchSession, result.photoId, {
+        status,
+        failureCode: result.failureCode,
+      });
+    }
+    const hasFailure = results.some(
+      (result) => result.status === 'failed' || result.status === 'cancelled',
+    );
+    if (!hasFailure) {
+      const handedOff = results.filter((result) => result.status === 'handedOff').length;
+      statusMessage = `${handedOff} ${t.batchOutputSuffix}`;
+      viewState = 'success';
+      if (draftSession?.status === 'exporting') {
+        draftSession = editingSessionReducer(draftSession, {
+          type: 'transition',
+          status: 'completed',
+        });
+      }
+      if (draftSession) await draftService.cleanupAfterExport(draftSession.id);
+      draftSession = null;
+      draftStatus = 'idle';
+      return;
+    }
+    errorMessage = t.batchPartialFailure;
+    statusMessage = t.batchPartialStatus;
+    viewState = 'error';
+    if (draftSession?.status === 'exporting') {
+      draftSession = editingSessionReducer(draftSession, {
+        type: 'transition',
+        status: 'partiallyExported',
+      });
+    }
+    scheduleCurrentDraft();
+  }
+
+  async function confirmBatchExport(): Promise<void> {
+    if (!batchSession || !batchExportReadiness(batchSession).ready) return;
+    batchReviewOpen = false;
+    viewState = 'exporting';
+    const workItems = batchWorkItems();
+    batchTotal = workItems.length;
+    if (draftSession?.status === 'reviewing') {
+      draftSession = editingSessionReducer(draftSession, {
+        type: 'transition',
+        status: 'exporting',
+      });
+    }
+    const results = await exportBatchSequentially(workItems, {
+      onProgress: (completed) => {
+        statusMessage = `${t.exportingBatch} ${completed} ${t.ofLabel} ${batchTotal}…`;
+      },
+    });
+    await finishBatchExport(results);
+  }
+
+  async function retryFailedBatch(): Promise<void> {
+    const workItems = batchWorkItems();
+    viewState = 'exporting';
+    if (draftSession?.status === 'partiallyExported') {
+      draftSession = editingSessionReducer(draftSession, {
+        type: 'transition',
+        status: 'exporting',
+      });
+    }
+    batchTotal = exportResults.filter((result) => result.status === 'failed').length;
+    const results = await retryFailedBatchExports(workItems, exportResults, {
+      onProgress: (completed) => {
+        statusMessage = `${t.retryingBatch} ${completed} ${t.ofLabel} ${batchTotal} ${t.failedItemsSuffix}`;
+      },
+    });
+    await finishBatchExport(results);
   }
 
   async function confirmExport(): Promise<void> {
@@ -673,15 +1149,23 @@
     />
     <div class="workspace-grid">
       <nav class="photo-rail" aria-label={t.photosLabel}>
-        <PhotoStatus
-          name={photo.sourceName}
-          status={viewState === 'success'
-            ? 'Exported'
-            : coordinateReady
-              ? 'Ready'
-              : 'Missing coordinate'}
-          active
-        />
+        {#if isBatch && batchSession}
+          <PhotoNavigator
+            items={batchNavigatorItems}
+            activeItemId={batchSession.activeItemId}
+            onSelect={loadBatchItem}
+          />
+        {:else}
+          <PhotoStatus
+            name={photo.sourceName}
+            status={viewState === 'success'
+              ? 'Exported'
+              : coordinateReady
+                ? 'Ready'
+                : 'Missing coordinate'}
+            active
+          />
+        {/if}
         <ImportPanel onFiles={handleFiles} />
       </nav>
 
@@ -753,6 +1237,9 @@
             onRemove={removeSelected}
           />
         {:else}
+          {#if isBatch}
+            <BatchSettings onApply={applySharedSettings} />
+          {/if}
           <ExportSettings {configuration} onChange={updateConfiguration} />
         {/if}
 
@@ -760,18 +1247,20 @@
           <button
             type="button"
             class="primary"
-            disabled={!canReview || viewState === 'exporting'}
-            aria-describedby={!canReview ? 'review-disabled-reason' : undefined}
+            disabled={!canOpenReview || viewState === 'exporting'}
+            aria-describedby={!canOpenReview ? 'review-disabled-reason' : undefined}
             onclick={openExportReview}>{t.reviewExport}</button
           >
-          {#if !canReview}
+          {#if !canOpenReview}
             <p id="review-disabled-reason">{disabledReason}</p>
           {/if}
         </div>
       </aside>
     </div>
 
-    {#if exportResults.length > 0}
+    {#if isBatch && exportResults.length > 0}
+      <BatchResults items={batchResultItems} onRetry={() => void retryFailedBatch()} />
+    {:else if exportResults.length > 0}
       <ExportResults
         results={exportResults}
         onRetry={() => {
@@ -789,6 +1278,14 @@
       reason={disabledReason}
       onClose={() => (reviewOpen = false)}
       onConfirm={confirmExport}
+    />
+
+    <BatchReview
+      open={batchReviewOpen}
+      items={batchReviewItems}
+      onDecision={decideBatchItem}
+      onClose={() => (batchReviewOpen = false)}
+      onConfirm={confirmBatchExport}
     />
 
     <MapConsent

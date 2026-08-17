@@ -178,18 +178,18 @@ source hashes and recoverable partial draft state.
 
 ### Tests for User Story 4 — write and observe failure first
 
-- [ ] T055 [P] [US4] Write and run failing batch-domain tests for 20-item intake, duplicate identity, per-photo provenance/status, shared-setting copies, unresolved/omit rules, and aggregate storage limits in `tests/unit/photos/batchSession.spec.ts`
-- [ ] T056 [P] [US4] Write and run failing sequential-export tests for concurrency 1, resource release, partial failure, retry, successful-result retention, and source hashes in `tests/integration/export/batchExport.spec.ts`
-- [ ] T057 [P] [US4] Write and run failing navigator/review/result component tests for mixed Ready/Missing/Invalid/Exported/Failed items in `tests/component/BatchWorkspace.spec.ts`
-- [ ] T058 [US4] Write and run the failing 20-valid-plus-1-invalid E2E journey in `tests/e2e/desktop/batch-workflow.spec.ts`
+- [x] T055 [P] [US4] Write and run failing batch-domain tests for 20-item intake, duplicate identity, per-photo provenance/status, shared-setting copies, unresolved/omit rules, and aggregate storage limits in `tests/unit/photos/batchSession.spec.ts`
+- [x] T056 [P] [US4] Write and run failing sequential-export tests for concurrency 1, resource release, partial failure, retry, successful-result retention, and source hashes in `tests/integration/export/batchExport.spec.ts`
+- [x] T057 [P] [US4] Write and run failing navigator/review/result component tests for mixed Ready/Missing/Invalid/Exported/Failed items in `tests/component/BatchWorkspace.spec.ts`
+- [x] T058 [US4] Write and run the failing 20-valid-plus-1-invalid E2E journey in `tests/e2e/desktop/batch-workflow.spec.ts`
 
 ### Implementation for User Story 4
 
-- [ ] T059 [US4] Implement batch import, duplicate-safe item identity, per-photo review state, shared-setting copy semantics, and aggregate quota decisions in `src/domain/photos/batchSession.ts`
-- [ ] T060 [US4] Implement the sequential export queue, cancellation boundaries, partial result retention, omission, and retry in `src/domain/export/batchExport.ts`
-- [ ] T061 [P] [US4] Build the adaptive photo strip/rail with text-and-icon statuses and per-photo coordinate review in `src/components/workspace/PhotoNavigator.svelte` and `src/components/workspace/PhotoNavigatorItem.svelte`
-- [ ] T062 [P] [US4] Build shared-setting application, unresolved/omit review, sequential progress, and partial-result retry UI in `src/components/export/BatchSettings.svelte`, `src/components/export/BatchReview.svelte`, and `src/components/export/BatchResults.svelte`
-- [ ] T063 [US4] Integrate batch state, draft persistence, and sequential export into `src/components/workspace/Workspace.svelte`, make T055–T058 green, and record the first-functional 20-valid-plus-1-invalid reliability baseline in `specs/001-annotate-photos/verification.md`
+- [x] T059 [US4] Implement batch import, duplicate-safe item identity, per-photo review state, shared-setting copy semantics, and aggregate quota decisions in `src/domain/photos/batchSession.ts`
+- [x] T060 [US4] Implement the sequential export queue, cancellation boundaries, partial result retention, omission, and retry in `src/domain/export/batchExport.ts`
+- [x] T061 [P] [US4] Build the adaptive photo strip/rail with text-and-icon statuses and per-photo coordinate review in `src/components/workspace/PhotoNavigator.svelte` and `src/components/workspace/PhotoNavigatorItem.svelte`
+- [x] T062 [P] [US4] Build shared-setting application, unresolved/omit review, sequential progress, and partial-result retry UI in `src/components/export/BatchSettings.svelte`, `src/components/export/BatchReview.svelte`, and `src/components/export/BatchResults.svelte`
+- [x] T063 [US4] Integrate batch state, draft persistence, and sequential export into `src/components/workspace/Workspace.svelte`, make T055–T058 green, and record the first-functional 20-valid-plus-1-invalid reliability baseline in `specs/001-annotate-photos/verification.md`
 
 **Checkpoint**: All four stories are independently evidenced; one bad item never destroys a valid
 source, completed output, or retryable draft.

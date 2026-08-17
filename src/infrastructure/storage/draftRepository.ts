@@ -31,6 +31,15 @@ export type PersistedDraftSnapshot = Readonly<{
   overlays?: readonly TextOverlay[];
   exportConfigurations?: readonly ExportConfiguration[];
   exportResults?: readonly ExportResult[];
+  batchInvalidItems?: readonly Readonly<{
+    id: string;
+    sourceName: string;
+    failureCode: string;
+  }>[];
+  batchDecisions?: readonly Readonly<{
+    photoId: string;
+    decision: 'required' | 'omit' | 'withoutCoordinate';
+  }>[];
 }>;
 
 export type DraftSnapshot = PersistedDraftSnapshot &
