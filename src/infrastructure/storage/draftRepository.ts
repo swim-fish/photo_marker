@@ -186,7 +186,7 @@ export class DraftRepository {
           return failureResult(
             migrated.error.code === 'incompatible-version'
               ? 'incompatible-version'
-              : 'storage-error',
+              : 'migration-failed',
           );
         }
 

@@ -112,6 +112,37 @@ describe('sequential batch export', () => {
     expect(exportOne).toHaveBeenCalledTimes(3);
   });
 
+  it('awaits each durable progress checkpoint before starting the next item', async () => {
+    const events: string[] = [];
+    const items = [workItem('one'), workItem('two')];
+    let releaseCheckpoint: (() => void) | undefined;
+    const checkpointGate = new Promise<void>((resolve) => (releaseCheckpoint = resolve));
+    const exportOne = vi.fn(async (item: BatchExportWorkItem) => {
+      events.push(`export:${item.photo.id}`);
+      return success(result(item.photo.id, 'handedOff'));
+    });
+    const run = exportBatchSequentially(items, {
+      exportOne,
+      onProgress: async (_completed, _total, completed) => {
+        events.push(`checkpoint:${completed.photoId}:start`);
+        if (completed.photoId === 'one') await checkpointGate;
+        events.push(`checkpoint:${completed.photoId}:done`);
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(exportOne).toHaveBeenCalledOnce();
+    releaseCheckpoint?.();
+    await run;
+    expect(events).toEqual([
+      'export:one',
+      'checkpoint:one:start',
+      'checkpoint:one:done',
+      'export:two',
+      'checkpoint:two:start',
+      'checkpoint:two:done',
+    ]);
+  });
+
   it('retries only failed items while retaining prior successful results', async () => {
     const items = [workItem('one'), workItem('bad'), workItem('three')];
     const previous = [

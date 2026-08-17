@@ -9,6 +9,7 @@
     name: string;
     status: 'Ready' | 'Missing coordinate' | 'Invalid' | 'Omitted' | 'Exported' | 'Failed';
     decision: 'required' | 'omit' | 'withoutCoordinate';
+    configurationReady?: boolean;
   }>;
 
   let {
@@ -17,28 +18,69 @@
     onDecision = () => undefined,
     onConfirm = () => undefined,
     onClose = () => undefined,
+    onRemove = () => undefined,
   }: {
     open?: boolean;
     items: readonly BatchReviewEntry[];
     onDecision?: (id: string, decision: 'omit' | 'withoutCoordinate') => void;
     onConfirm?: () => void;
     onClose?: () => void;
+    onRemove?: (id: string) => void;
   } = $props();
 
   let dialog = $state<HTMLDialogElement>();
+  let invoker: HTMLElement | null = null;
+  let wasOpen = false;
   const unresolved = $derived(
-    items.filter((item) => item.status === 'Missing coordinate' && item.decision === 'required'),
+    items.filter(
+      (item) =>
+        (item.status === 'Missing coordinate' && item.decision === 'required') ||
+        (item.status !== 'Invalid' &&
+          item.decision !== 'omit' &&
+          item.configurationReady === false),
+    ),
   );
 
   $effect(() => {
-    if (!open) return;
-    void tick().then(() => dialog?.querySelector<HTMLElement>('button')?.focus());
+    if (open && !wasOpen) {
+      invoker = document.activeElement as HTMLElement | null;
+      void tick().then(() => dialog?.querySelector<HTMLElement>('button')?.focus());
+    } else if (!open && wasOpen) {
+      queueMicrotask(() => invoker?.focus());
+    }
+    wasOpen = open;
   });
+
+  function handleKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (event.key !== 'Tab' || !dialog) return;
+    const controls = Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled])'));
+    const first = controls[0];
+    const last = controls.at(-1);
+    if (!first || !last) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 </script>
 
 {#if open}
   <div class="backdrop" role="presentation">
-    <dialog bind:this={dialog} open aria-labelledby="batch-review-title">
+    <dialog
+      bind:this={dialog}
+      open
+      aria-modal="true"
+      aria-labelledby="batch-review-title"
+      onkeydown={handleKeydown}
+    >
       <h2 id="batch-review-title">{t.reviewBatchExport}</h2>
       <p>{t.batchExportHelp}</p>
       <ul>
@@ -58,6 +100,12 @@
               <small
                 >{item.decision === 'omit' ? t.explicitlyOmitted : t.coordinateFreeExport}</small
               >
+            {:else if item.status === 'Invalid'}
+              <button type="button" onclick={() => onRemove(item.id)}
+                >{t.removeInvalidPhoto}: {item.name}</button
+              >
+            {:else if item.configurationReady === false}
+              <small class="warning">{t.resolveExportSettings}</small>
             {/if}
           </li>
         {/each}
@@ -141,5 +189,9 @@
     color: #0f172a;
     background: #93c5fd;
     font-weight: 700;
+  }
+
+  .warning {
+    color: #fbbf24;
   }
 </style>

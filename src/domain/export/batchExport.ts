@@ -21,7 +21,7 @@ export type BatchExportDependencies = Readonly<{
   exportOne?: ExportOne;
   release?: (item: BatchExportWorkItem) => void | Promise<void>;
   signal?: AbortSignal;
-  onProgress?: (completed: number, total: number, result: ExportResult) => void;
+  onProgress?: (completed: number, total: number, result: ExportResult) => void | Promise<void>;
 }>;
 
 function terminalResult(
@@ -75,7 +75,7 @@ export async function exportBatchSequentially(
     if (item.disposition === 'omit') {
       const omitted = terminalResult(item.photo.id, 'omitted', null);
       results.push(omitted);
-      dependencies.onProgress?.(results.length, items.length, omitted);
+      await dependencies.onProgress?.(results.length, items.length, omitted);
       continue;
     }
 
@@ -101,7 +101,7 @@ export async function exportBatchSequentially(
     if (completed.status === 'handedOff' && completed.outputName) {
       existingOutputNames.push(completed.outputName);
     }
-    dependencies.onProgress?.(results.length, items.length, completed);
+    await dependencies.onProgress?.(results.length, items.length, completed);
   }
 
   return results;

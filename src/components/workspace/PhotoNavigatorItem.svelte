@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { messages } from '../../i18n';
+
+  const t = messages.en;
+
   export type NavigatorStatus =
     'Ready' | 'Missing coordinate' | 'Invalid' | 'Omitted' | 'Exported' | 'Failed';
 
@@ -10,6 +14,7 @@
     failureCode,
     active = false,
     onSelect = () => undefined,
+    onRemove = () => undefined,
   }: {
     id: string;
     name: string;
@@ -18,6 +23,7 @@
     failureCode?: string;
     active?: boolean;
     onSelect?: (id: string) => void;
+    onRemove?: (id: string) => void;
   } = $props();
 
   const symbol = $derived(
@@ -50,11 +56,21 @@
       {#if failureCode}<small class="failure">{failureCode}</small>{/if}
     </span>
   </button>
+  {#if status === 'Invalid'}
+    <button
+      type="button"
+      class="remove"
+      aria-label={`${t.removeInvalidPhoto}: ${name}`}
+      onclick={() => onRemove(id)}>{t.removeInvalidPhoto}</button
+    >
+  {/if}
 </li>
 
 <style>
   li {
+    display: grid;
     min-width: 0;
+    gap: 0.35rem;
     list-style: none;
   }
 
@@ -80,6 +96,13 @@
   button:disabled {
     opacity: 0.8;
     cursor: not-allowed;
+  }
+
+  .remove {
+    display: block;
+    min-height: 44px;
+    color: #fecaca;
+    background: #450a0a;
   }
 
   .symbol {

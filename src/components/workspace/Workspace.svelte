@@ -28,6 +28,7 @@
     type BatchExportWorkItem,
   } from '../../domain/export/batchExport';
   import type { ExportConfiguration, ExportResult } from '../../domain/export/types';
+  import { isExportConfigurationReady } from '../../domain/export/types';
   import {
     grantMapConsent,
     MAP_CONSENT_POLICY_VERSION,
@@ -50,6 +51,7 @@
     applySharedBatchSettings,
     batchExportReadiness,
     createBatchSession,
+    removeInvalidBatchItem,
     selectBatchItem,
     setBatchItemDecision,
     updateBatchItem,
@@ -60,6 +62,7 @@
   import type { SourcePhoto } from '../../domain/photos/types';
   import { requestCurrentLocation } from '../../infrastructure/platform/geolocation';
   import {
+    consumeSharedFiles,
     DraftRepository,
     type DraftSnapshot,
   } from '../../infrastructure/storage/draftRepository';
@@ -105,6 +108,7 @@
   let draftStatus = $state<DraftUiStatus>('idle');
   let recoverableDraft = $state<DraftSnapshot | null>(null);
   let draftRecoveryOpen = $state(false);
+  let draftRecoveryIssue = $state('');
   let offlineReadiness = $state<OfflineReadinessResult>({
     status: 'not-ready',
     reason: 'service-worker-unavailable',
@@ -147,14 +151,7 @@
   const coordinateReady = $derived(coordinate?.validationStatus === 'valid');
   const overlaysReady = $derived(overlays.length > 0);
   const configurationReady = $derived(
-    Boolean(
-      configuration &&
-      photo &&
-      !(
-        configuration.metadataMode === 'preserveSupported' &&
-        configuration.format !== photo.sourceMime
-      ),
-    ),
+    Boolean(configuration && photo && isExportConfigurationReady(configuration, photo.sourceMime)),
   );
   const canReview = $derived(coordinateReady && overlaysReady && configurationReady);
   const isBatch = $derived((batchSession?.items.length ?? 0) > 1);
@@ -217,6 +214,10 @@
         name: item.name,
         status: item.status,
         decision: source?.kind === 'editable' ? source.decision : ('required' as const),
+        configurationReady:
+          source?.kind === 'editable'
+            ? isExportConfigurationReady(source.configuration, source.photo.sourceMime)
+            : true,
       };
     }),
   );
@@ -363,9 +364,33 @@
 
   async function findRecoverableDraft(): Promise<void> {
     const result = await draftService.restoreLatest();
-    if (!result.ok) return;
+    if (!result.ok) {
+      if (result.error.code === 'not-found') return;
+      draftStatus = 'error';
+      draftRecoveryIssue =
+        result.error.code === 'incompatible-version'
+          ? t.incompatibleDraftRecovery
+          : t.failedDraftRecovery;
+      return;
+    }
+    draftRecoveryIssue = '';
     recoverableDraft = result.value;
     draftRecoveryOpen = true;
+  }
+
+  async function loadInitialLocalState(): Promise<void> {
+    try {
+      const sharedFiles = await consumeSharedFiles();
+      if (sharedFiles.length > 0) {
+        await handleFiles(sharedFiles);
+        return;
+      }
+    } catch {
+      draftStatus = 'error';
+      draftRecoveryIssue = t.failedDraftRecovery;
+      return;
+    }
+    await findRecoverableDraft();
   }
 
   onMount(() => {
@@ -373,7 +398,7 @@
     isOnline = navigator.onLine;
     installedApp = window.matchMedia('(display-mode: standalone)').matches;
     void refreshOfflineReadiness();
-    void findRecoverableDraft();
+    void loadInitialLocalState();
     const handleOnline = () => (isOnline = true);
     const handleOffline = () => (isOnline = false);
     const flushDraft = () => void draftService.flush();
@@ -494,7 +519,7 @@
     });
   }
 
-  async function handleFiles(files: FileList): Promise<void> {
+  async function handleFiles(files: FileList | readonly File[]): Promise<void> {
     if (files.length === 0) return;
     viewState = 'loading';
     statusMessage = `${t.importProgress} ${files.length} item(s)`;
@@ -938,6 +963,12 @@
     scheduleCurrentDraft();
   }
 
+  function removeInvalidItem(itemId: string): void {
+    if (!batchSession) return;
+    batchSession = removeInvalidBatchItem(batchSession, itemId);
+    scheduleCurrentDraft();
+  }
+
   async function openExportReview(): Promise<void> {
     const snapshot = currentDraftSnapshot();
     if (snapshot) {
@@ -982,21 +1013,9 @@
   }
 
   async function finishBatchExport(results: readonly ExportResult[]): Promise<void> {
-    exportResults = [...results];
     if (!batchSession) return;
     for (const result of results) {
-      const status =
-        result.status === 'handedOff'
-          ? 'exported'
-          : result.status === 'omitted'
-            ? 'omitted'
-            : result.status === 'failed'
-              ? 'failed'
-              : 'ready';
-      batchSession = updateBatchItem(batchSession, result.photoId, {
-        status,
-        failureCode: result.failureCode,
-      });
+      applyBatchProgressResult(result);
     }
     const hasFailure = results.some(
       (result) => result.status === 'failed' || result.status === 'cancelled',
@@ -1028,6 +1047,26 @@
     scheduleCurrentDraft();
   }
 
+  function applyBatchProgressResult(result: ExportResult): void {
+    exportResults = [
+      ...exportResults.filter((existing) => existing.photoId !== result.photoId),
+      result,
+    ];
+    if (!batchSession) return;
+    const status =
+      result.status === 'handedOff'
+        ? 'exported'
+        : result.status === 'omitted'
+          ? 'omitted'
+          : result.status === 'failed'
+            ? 'failed'
+            : 'ready';
+    batchSession = updateBatchItem(batchSession, result.photoId, {
+      status,
+      failureCode: result.failureCode,
+    });
+  }
+
   async function confirmBatchExport(): Promise<void> {
     if (!batchSession || !batchExportReadiness(batchSession).ready) return;
     batchReviewOpen = false;
@@ -1040,8 +1079,22 @@
         status: 'exporting',
       });
     }
+    if (draftSession) {
+      draftSession = editingSessionReducer(draftSession, { type: 'touch' });
+      const exportingSnapshot = currentDraftSnapshot();
+      if (exportingSnapshot) await draftService.flush(exportingSnapshot);
+    }
     const results = await exportBatchSequentially(workItems, {
-      onProgress: (completed) => {
+      onProgress: async (completed, _total, result) => {
+        applyBatchProgressResult(result);
+        if (draftSession) {
+          draftSession = editingSessionReducer(draftSession, { type: 'touch' });
+          const checkpoint = currentDraftSnapshot();
+          if (checkpoint) {
+            draftStatus = 'saving';
+            await draftService.flush(checkpoint);
+          }
+        }
         statusMessage = `${t.exportingBatch} ${completed} ${t.ofLabel} ${batchTotal}…`;
       },
     });
@@ -1059,7 +1112,16 @@
     }
     batchTotal = exportResults.filter((result) => result.status === 'failed').length;
     const results = await retryFailedBatchExports(workItems, exportResults, {
-      onProgress: (completed) => {
+      onProgress: async (completed, _total, result) => {
+        applyBatchProgressResult(result);
+        if (draftSession) {
+          draftSession = editingSessionReducer(draftSession, { type: 'touch' });
+          const checkpoint = currentDraftSnapshot();
+          if (checkpoint) {
+            draftStatus = 'saving';
+            await draftService.flush(checkpoint);
+          }
+        }
         statusMessage = `${t.retryingBatch} ${completed} ${t.ofLabel} ${batchTotal} ${t.failedItemsSuffix}`;
       },
     });
@@ -1112,6 +1174,17 @@
   <section class="application-status" aria-label={t.applicationStatus}>
     <OfflineStatus readiness={offlineReadiness} online={isOnline} />
     <DraftStatus status={draftStatus} />
+    {#if draftRecoveryIssue}
+      <p class="recovery-error" role="alert">{draftRecoveryIssue}</p>
+      <button
+        type="button"
+        class="secondary"
+        onclick={() => {
+          draftRecoveryIssue = '';
+          void findRecoverableDraft();
+        }}>{t.retryDraftRecovery}</button
+      >
+    {/if}
     {#if !installedApp}
       <InstallHelp installed={installedApp} />
     {/if}
@@ -1154,6 +1227,7 @@
             items={batchNavigatorItems}
             activeItemId={batchSession.activeItemId}
             onSelect={loadBatchItem}
+            onRemove={removeInvalidItem}
           />
         {:else}
           <PhotoStatus
@@ -1284,6 +1358,7 @@
       open={batchReviewOpen}
       items={batchReviewItems}
       onDecision={decideBatchItem}
+      onRemove={removeInvalidItem}
       onClose={() => (batchReviewOpen = false)}
       onConfirm={confirmBatchExport}
     />

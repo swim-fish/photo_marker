@@ -67,6 +67,18 @@ export function selectOldShellCachesForDeletion(
   );
 }
 
+export function orderedShellCacheNames(
+  currentCacheName: string,
+  cacheNames: readonly string[],
+): string[] {
+  return [
+    currentCacheName,
+    ...cacheNames.filter(
+      (name) => name.startsWith(SHELL_CACHE_PREFIX) && name !== currentCacheName,
+    ),
+  ];
+}
+
 export function isRuntimeRequestAllowed(
   rawUrl: string,
   applicationOrigin: string,

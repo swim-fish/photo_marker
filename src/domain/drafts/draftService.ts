@@ -52,19 +52,29 @@ export class DraftService {
       this.timer = undefined;
     }
     if (this.inFlight) return this.inFlight;
-    const pending = this.pending;
-    if (!pending) {
+    if (!this.pending) {
       return { ok: true, value: { sessionId: '', revision: 0, persistenceStatus: 'unknown' } };
     }
-    this.pending = undefined;
-    this.inFlight = this.repository.save(pending);
+    this.inFlight = this.drainPending();
     try {
-      const result = await this.inFlight;
-      this.onSave?.(result);
-      return result;
+      return await this.inFlight;
     } finally {
       this.inFlight = undefined;
     }
+  }
+
+  private async drainPending(): Promise<DraftResult<DraftSaveSummary>> {
+    let result: DraftResult<DraftSaveSummary> = {
+      ok: true,
+      value: { sessionId: '', revision: 0, persistenceStatus: 'unknown' },
+    };
+    while (this.pending) {
+      const pending = this.pending;
+      this.pending = undefined;
+      result = await this.repository.save(pending);
+      this.onSave?.(result);
+    }
+    return result;
   }
 
   async restore(sessionId: string): Promise<DraftResult<DraftSnapshot>> {

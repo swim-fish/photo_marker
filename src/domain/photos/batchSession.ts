@@ -1,5 +1,5 @@
 import type { CoordinateDisplayFormat, CoordinateRecord } from '../coordinates/types';
-import type { ExportConfiguration } from '../export/types';
+import { isExportConfigurationReady, type ExportConfiguration } from '../export/types';
 import type { OverlayTemplate, TextOverlay } from '../overlays/types';
 import { failure, type Result, success } from '../result';
 import { validatePhotoBatchLimits } from './photoLimits';
@@ -178,11 +178,19 @@ export function batchExportReadiness(session: BatchSession): {
     .filter(
       (item): item is EditableBatchItem =>
         item.kind === 'editable' &&
-        item.coordinate?.validationStatus !== 'valid' &&
-        item.decision === 'required',
+        item.decision !== 'omit' &&
+        ((item.coordinate?.validationStatus !== 'valid' && item.decision === 'required') ||
+          !isExportConfigurationReady(item.configuration, item.photo.sourceMime)),
     )
     .map((item) => item.id);
   return { ready: unresolvedItemIds.length === 0, unresolvedItemIds };
+}
+
+export function removeInvalidBatchItem(session: BatchSession, itemId: string): BatchSession {
+  return {
+    ...session,
+    items: session.items.filter((item) => item.kind !== 'invalid' || item.id !== itemId),
+  };
 }
 
 export function updateBatchItem(

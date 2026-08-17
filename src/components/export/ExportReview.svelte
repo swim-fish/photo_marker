@@ -23,14 +23,20 @@
   } = $props();
 
   let dialog = $state<HTMLDialogElement>();
+  let invoker: HTMLElement | null = null;
+  let wasOpen = false;
 
   $effect(() => {
-    if (open) {
+    if (open && !wasOpen) {
+      invoker = document.activeElement as HTMLElement | null;
       queueMicrotask(() => {
         const firstControl = dialog?.querySelector<HTMLElement>('button:not([disabled])');
         (firstControl ?? dialog)?.focus();
       });
+    } else if (!open && wasOpen) {
+      queueMicrotask(() => invoker?.focus());
     }
+    wasOpen = open;
   });
 
   function handleKeydown(event: KeyboardEvent): void {
@@ -65,6 +71,7 @@
       bind:this={dialog}
       class="dialog"
       open
+      aria-modal="true"
       aria-labelledby="export-review-title"
       onkeydown={handleKeydown}
     >

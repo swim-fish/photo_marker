@@ -51,6 +51,7 @@ spacing requirements. Sticky actions and drawers must not fully obscure the focu
 ### Import and decode
 
 - Show `n of total`, the current filename, and cancel.
+- State the enforced per-photo limits: JPEG/PNG, 32 MiB compressed, 13 MP, and 8192 px per axis.
 - Keep successful items if one item is unsupported, corrupt, or over limit.
 - Associate the failure with the affected item and offer remove/replace.
 - Preserve selected Files if offline readiness is incomplete and explain the missing readiness step.
@@ -67,6 +68,10 @@ spacing requirements. Sticky actions and drawers must not fully obscure the focu
 
 - List each photo as `Ready`, `Omit`, or `Needs resolution`.
 - Show format, dimensions, quality, metadata choice, and any fallback/loss disclosure.
+- Same-format preservation is limited to the documented metadata profile. If preservation fails its
+  structural checks, keep export blocked until the user explicitly selects metadata removal; never
+  silently strip metadata. A rendered output over the 64 MiB allocation ceiling remains blocked and
+  is not bypassed by metadata removal.
 - Enable Export only when each item is resolved or explicitly omitted.
 - Use a modal for consequential fallback, overwrite, or discard confirmation. Move focus into it, keep
   focus within it, close with Escape, and return focus to the invoker.
@@ -74,6 +79,8 @@ spacing requirements. Sticky actions and drawers must not fully obscure the focu
 ### Export progress and result
 
 - Show per-photo progress and a durable result list.
+- Checkpoint each completed, omitted, or failed item into the local draft before the queue advances,
+  so recovery does not repeat an already handed-off item after an interruption.
 - Preserve successful results when another photo fails; offer Retry only for failed items.
 - Use polite live regions for progress/success. Immediate actionable failure may use `alert` without
   moving focus.
@@ -102,6 +109,8 @@ spacing requirements. Sticky actions and drawers must not fully obscure the focu
 | Empty | Explanation and next action |
 | Invalid coordinate | Field error, photo badge, correction guidance; never color-only |
 | Unsupported format | Item error plus remove/replace; accepted items remain |
+| Metadata preservation unavailable | Explain the profile limitation and offer explicit metadata removal; do not silently continue |
+| Rendered output over allocation ceiling | Keep export blocked and suggest reducing output size; metadata removal does not bypass the ceiling |
 | Offline not ready | Persistent banner and recovery step; no false readiness claim |
 | Disabled | Visible control and linked reason; focus is retained when safe |
 | Saving locally | Status region announces progress without interrupting input |
@@ -134,7 +143,9 @@ The overlay list is the semantic selection surface. Each row has an accessible n
 summary, selected state, and remove action. The inspector provides content, role, normalized/numeric
 position and size, text size, text/background color, ordering, and contrast status.
 
-Pointer drag and resize are accelerators only. Equivalent single-pointer and keyboard controls include:
+The required MVP path uses tap/click selection plus the inspector controls below. Direct pointer drag
+or resize may be added later only as an accelerator; it is not required to complete the workflow.
+Equivalent touch, mouse, and keyboard controls include:
 
 - Move up/down/left/right buttons.
 - Numeric position and size fields.
@@ -143,9 +154,9 @@ Pointer drag and resize are accelerators only. Equivalent single-pointer and key
 - Arrow movement at 1% and `Shift+Arrow` at 5%.
 
 All paths update the same normalized state and clamp overlays inside image bounds. Focus and selection
-use distinct indicators visible on light and dark photos. Resize handles may look smaller but retain a
-44 px effective hit area. Pinch is not the only zoom method. Limit `touch-action` restrictions to the
-actively manipulated stage/handle so page pan and browser zoom remain available.
+use distinct indicators visible on light and dark photos. Overlay selection retains a 44 px effective
+hit area without changing normalized output geometry. Pinch is not the only zoom method. The current
+tap/inspector path does not restrict `touch-action`, so page pan and browser zoom remain available.
 
 Low text/background contrast shows a warning and offers safe presets. User colors are not silently
 changed. Preview and export use the same bundled fonts and renderer geometry; Unicode, Taiwan
@@ -170,12 +181,27 @@ stored/exported data and may include a localized explanatory label in the interf
 state the affected item, cause, and available action without exposing local paths, coordinates, image
 content, or metadata in diagnostics.
 
+## Persisted state and recovery
+
+Draft records are versioned and committed transactionally. Batch decisions, invalid intake results,
+and partial export results are additive optional fields, so a single-photo draft that lacks them
+restores with the original behavior. A draft from a newer unsupported record version remains intact
+and is reported as incompatible instead of being rewritten or deleted. Completing export or
+confirming discard removes the corresponding session, revision, and source-photo records together.
+
+Application-shell updates do not cache source photos or map tiles. The previous complete shell cache
+is kept until the replacement shell is complete, and fetch fallback can serve it if a replacement
+cache becomes incomplete; an incomplete current update must not be reported as offline ready. Web
+Share Target remains absent from the default release manifest until physical-device zero-egress
+validation is complete. When explicitly enabled, shared intake validates count, MIME, byte size, and
+magic bytes before local persistence, then startup consumes it through the common import validation.
+
 ## Focused visual and accessibility validation
 
 - Inspect empty, loading, invalid-coordinate, unsupported-format, offline-not-ready, disabled,
   storage-warning, export-failure, success, and partial-batch states.
 - Complete one single-photo path with touch and one with keyboard only.
-- Compare pointer drag, tap-only move/resize, and keyboard move/resize output positions.
+- Compare tap/click inspector and keyboard move/resize output positions.
 - Inspect 320×568, 568×320, 1024×768, and 400% zoom for reflow, target size, and focus obstruction.
 - Run one desktop browser/screen-reader and one supported mobile browser/screen-reader smoke path for
   names, provenance, errors, progress, and modal focus.

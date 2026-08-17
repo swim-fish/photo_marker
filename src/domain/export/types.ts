@@ -43,3 +43,33 @@ export type ExportResult = Readonly<{
     handoff?: number;
   }>;
 }>;
+
+export function isExportConfigurationReady(
+  configuration: ExportConfiguration | null,
+  sourceMime: ExportFormat,
+): boolean {
+  if (!configuration) return false;
+  const validDimensions =
+    Number.isSafeInteger(configuration.width) &&
+    Number.isSafeInteger(configuration.height) &&
+    configuration.width >= 1 &&
+    configuration.height >= 1 &&
+    configuration.width <= 8192 &&
+    configuration.height <= 8192 &&
+    configuration.width * configuration.height <= 13_000_000;
+  const validQuality =
+    configuration.format === 'image/png' ||
+    (typeof configuration.quality === 'number' &&
+      configuration.quality >= 0.1 &&
+      configuration.quality <= 1);
+  const validMetadata = !(
+    configuration.metadataMode === 'preserveSupported' && configuration.format !== sourceMime
+  );
+  return (
+    validDimensions &&
+    validQuality &&
+    validMetadata &&
+    configuration.outputName.trim().length > 0 &&
+    !configuration.fallback
+  );
+}

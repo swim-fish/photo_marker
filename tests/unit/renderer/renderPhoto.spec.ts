@@ -23,6 +23,19 @@ const overlay = {
 };
 
 describe('photo renderer planning and fallbacks', () => {
+  it('fails closed when no real canvas renderer is available', async () => {
+    const source = await createPhotoFixtureFile('orientation-6.jpg');
+    await expect(
+      renderPhoto(source, {
+        mode: 'export',
+        orientation: 6,
+        outputFormat: 'image/png',
+        metadataMode: 'removeSupported',
+        overlays: [overlay],
+      }),
+    ).resolves.toMatchObject({ ok: false, error: { code: 'encode-failed' } });
+  });
+
   it('plans all EXIF orientations against the display-oriented image', () => {
     const plans = orientationFixtureNames.map((_, index) =>
       createRenderPlan({
@@ -98,12 +111,14 @@ describe('photo renderer planning and fallbacks', () => {
       mode: 'preview',
       orientation: 6,
       overlays: [overlay],
+      renderCanvas: async (blob) => blob.slice(0, blob.size, 'image/jpeg'),
     });
     const exported = await renderPhoto(source, {
       mode: 'export',
       orientation: 6,
       overlays: [overlay],
       workerAvailable: false,
+      renderCanvas: async (blob) => blob.slice(0, blob.size, 'image/jpeg'),
       resources: { releaseBitmap, revokeObjectUrl },
     });
 

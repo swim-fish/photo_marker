@@ -297,3 +297,110 @@ was introduced.
 **UI documentation impact: none.** The photo strip/rail, text-and-icon statuses, shared-setting copy
 semantics, unresolved decisions, partial results, retry, responsive behavior, and browser-handoff
 wording match `docs/ui/photo-annotation-workspace.md`.
+
+## Phase 7 — Cross-Cutting Release Hardening
+
+**Scope**: T064–T067 and T070–T074. T068 and T069 remain external release gates; the local portion of
+T068 includes one final 20-photo reliability comparison only.
+
+### Red-Green-Refactor evidence
+
+- RED — the first malformed-segment/allocation/diagnostic run showed oversized metadata reads and
+  rendered outputs allocating bytes before rejection, and an untrusted diagnostic string echoed a
+  path, coordinate, and annotation. GREEN — bounded reads/writes and sanitized diagnostics pass.
+- RED — the first full regression exposed five failures because sanitization also replaced valid
+  stable typed codes. GREEN — safe kebab-case typed codes retain their contract while free text is
+  normalized to `unknown-error`.
+- RED — new oversized-dimension, invalid TIFF offset, final attachment-size, and no-renderer cases
+  returned the wrong result or passed. GREEN — dimensions are rejected before decode, linked TIFF
+  offsets are bounds checked, combined allocations are bounded, and export fails closed without a
+  real Canvas path.
+- RED — a controlled draft save race lost revision 2 behind an in-flight revision 1, and a controlled
+  batch checkpoint allowed item 2 to start before item 1 was durable. GREEN — the draft service drains
+  the newest pending revision and the sequential queue awaits each local checkpoint.
+- RED — desktop browser regression found the accessible overlay text present but visually collapsed
+  with the 4×3 deterministic fixture after fidelity styling. GREEN — the responsive preview now
+  scales the image work surface, derives text/padding from its rendered dimensions, and the six
+  desktop journeys pass.
+
+### Independent review findings and primary dispositions
+
+| Review | Finding | Disposition |
+| --- | --- | --- |
+| T070 metadata | Declared dimensions reached browser decode before pixel limits | Fixed with pre-decode dimension/area validation and a decoder-not-called regression fixture |
+| T070 metadata | The 64 MiB bound covered rendered bytes but not the attached result | Fixed with overflow-safe combined-length checks before allocation |
+| T070 metadata | EXIF/`eXIf` internal offsets were not characterized | Fixed with bounded TIFF/IFD/value/pointer validation and JPEG/PNG invalid-offset fixtures |
+| T070 metadata | Missing Canvas could relabel source bytes or create a blank PNG | Fixed; export now returns `encode-failed`, while focused tests inject an explicit verified renderer seam |
+| T071 platform | An incomplete current shell had no retained-shell fetch fallback | Fixed with current-then-retained shell lookup; old caches are deleted only after current completeness |
+| T071 platform | Enabled Web Share Target intake was not bounded or consumed by the editor | Fixed with count/MIME/size/magic checks and startup consumption through common import validation; physical zero-egress remains blocked |
+| T071 platform | Sanitization broke valid typed diagnostic codes | Fixed with safe stable-code preservation and free-text normalization; full regression is green |
+| T072 UX | In-flight autosave could drop the newest revision | Fixed with a single draining save promise and controlled race test |
+| T072 UX | Incompatible/migration-failed drafts were silent | Fixed with distinct typed migration failure, preserved records, visible guidance, and Retry |
+| T072 UX | DOM preview omitted font size/family/padding/line height | Fixed with rendered-stage measurement and the same normalized style values; desktop/mobile visually inspected |
+| T072 UX | Batch review omitted per-photo configuration readiness | Fixed with shared format/dimension/quality/name/metadata validation and disabled confirmation |
+| T072 UX | Partial results were durable only after the queue ended | Fixed; every result is merged and transactionally checkpointed before the next item starts |
+| T072 UX | Invalid intake lacked an item-level recovery action | Fixed with item-level Remove while retaining accepted photos; replacement remains available through import |
+| T072 UX | Review dialogs lacked complete focus return/trapping | Fixed for batch and single review with Escape, Tab containment, `aria-modal`, and invoker focus return |
+| T072 UX | Overlay hit target/touch policy conflicted with the implemented interaction | Fixed with a 44 px effective selection target, no blanket `touch-action` restriction, and docs aligned to tap/inspector/keyboard controls |
+| T072 performance | Evidence is not representative-device release evidence | Confirmed blocker under T068; no release claim is made |
+
+The primary review found no source-Blob mutation path after these changes. Capture GPS remains copied
+unchanged only within the supported same-format profile, and the orientation 1–8 transform suites
+remain green.
+
+### Final automated and browser checks
+
+| Check | Outcome |
+| --- | --- |
+| Malformed metadata/diagnostic focused run | PASS — bounded corpus, dimension, TIFF offset, allocation, and sanitization cases |
+| Full Vitest regression suite | PASS — 35 files, 189 tests |
+| TypeScript/Svelte typecheck | PASS — 0 errors, 0 warnings |
+| ESLint | PASS — 0 warnings |
+| Prettier format check | PASS — all matched files formatted |
+| Production build | PASS — 12 precache entries, 1,539.29 KiB; app 132.30 KiB gzip; service worker 3.59 KiB gzip; Leaflet 43.38 KiB gzip |
+| Production privacy policy build test | PASS — enforced CSP, no runtime CDN/analytics/upload API, NLSC-only image exception, no tile/user-content cache, required notices |
+| Desktop primary regression | PASS — 6 journeys covering single photo, coordinate/map isolation, multi-photo recovery, and 20+1 batch |
+| Production offline regression | PASS — desktop Chrome and Pixel 5 emulation; 2 opposite-project skips by scope |
+
+The final local 20-valid-plus-1-invalid journey completed in **3.9 seconds** of Playwright test time,
+versus the T063 diagnostic baseline of **3.6 seconds**. The 8.3% difference is below the 10%
+investigation threshold, with no crash, lost result, or source mutation. This is still a workstation
+PNG diagnostic and does not satisfy the representative-device part of T068.
+
+### Focused visual and interaction inspection
+
+- PASS — 1440×900 and 393×852 production layouts show a scaled photo, visible normalized overlay
+  typography/background/padding, inspector controls, and no document-level horizontal overflow.
+- PASS — measured desktop overlay was 576×64.34 CSS px with a 20.48 px computed font; measured mobile
+  overlay was 241.19×27.63 CSS px with an 8.79 px computed font. Both contained visible text and kept
+  normalized geometry.
+- PASS — keyboard-only export, map consent/close/revoke isolation, batch modal decision flow, and
+  item-level invalid removal remain reachable in the focused component/browser coverage.
+
+### Skipped checks, blockers, and remaining risks
+
+- T054 remains open: physical Android Chrome and Windows Edge installed-PWA validation, real touch,
+  browser 400% zoom, and desktop/mobile screen-reader smoke were unavailable.
+- T068 remains open: no representative Android and Windows devices were available for five final
+  4032×3024 JPEG preview/export runs. No long benchmark or soak suite was run.
+- T069 remains open: no pool of at least 10 representative first-time participants was available, so
+  the 90%-within-three-minutes criterion is unverified.
+- Web Share Target remains disabled in the default manifest. Android support cannot be released until
+  a physical device proves local POST interception with zero fallback egress, or an approved spec and
+  platform-matrix revision removes that claim.
+- The retained-shell fallback is automated at policy and production-offline levels; interrupted
+  installed-PWA update behavior still requires the T054 physical-device check.
+- Vite emits a non-blocking plugin deprecation warning for `inlineDynamicImports`; the production
+  build and policy assertions pass.
+
+The feature is therefore **not release-complete** while T054, T068, and T069 remain open. All locally
+executable implementation and verification tasks are complete and green.
+
+**ADR impact: amended.** ADR-0001 now records pre-decode limits, bounded TIFF offset validation,
+fail-closed rendering, combined output allocation limits, and retained-shell fallback behavior. These
+clarify the approved security/compatibility boundary without adding a dependency or backend.
+
+**UI documentation impact: amended.** `docs/ui/photo-annotation-workspace.md` now reflects actual
+metadata/output failures, additive recovery behavior, awaited partial-result checkpoints, share-intake
+validation, scaled preview fidelity, 44 px effective targets, and the implemented tap/inspector/
+keyboard interaction rather than claiming an unimplemented direct-drag path.

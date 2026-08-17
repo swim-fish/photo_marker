@@ -112,7 +112,9 @@ async function createGpsJpegFixture(): Promise<File> {
 async function createMetadataPngFixture(): Promise<File> {
   const source = await readPhotoFixture('sample.png');
   const iendOffset = source.length - 12;
-  const exif = new Uint8Array([0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00]);
+  const exif = new Uint8Array([
+    0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  ]);
   const text = new TextEncoder().encode('fixture\0offline');
   const phys = new Uint8Array(9);
   const physView = new DataView(phys.buffer);

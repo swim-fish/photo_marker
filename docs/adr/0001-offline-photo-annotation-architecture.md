@@ -86,6 +86,13 @@ Do not preserve ICC profiles, MPF, embedded thumbnails, unknown application segm
 structural offsets in the MVP. Preserve capture GPS unchanged; a visible manual/current coordinate
 does not rewrite it. Format changes disclose metadata loss. If preservation cannot be completed, the
 mode is blocked until the user explicitly selects metadata removal; silent stripping is prohibited.
+Reject metadata reads before allocation when the source exceeds the public 32 MiB file limit, and
+reject metadata rewriting before allocation when the rendered output exceeds 64 MiB. The output bound
+is an internal safety ceiling, not a promise that every smaller image can be encoded on every device.
+Validate TIFF byte order, IFD entry bounds, supported value offsets, and linked EXIF/GPS directories
+before preserving JPEG EXIF or PNG `eXIf`. Reject declared dimensions before browser decode. If no
+real Canvas/OffscreenCanvas render path exists, export fails closed rather than relabeling source bytes
+or generating a blank image.
 
 ### 6. Vendor the verified coordinate core
 
@@ -149,9 +156,12 @@ that the browser wrote a specific path. ZIP packaging is out of scope.
 ## Compatibility, migration, and rollback
 
 - Persisted records carry schema and record versions; migrations are additive and transactional.
-- A service-worker update activates only with a complete precache; rollback uses the prior complete
-  shell. The supported Android release may remove `share_target` only with an approved specification
-  and supported-matrix revision.
+- The initial batch fields are additive optional fields in record schema version 1. Their absence
+  restores single-photo defaults; unknown newer records are preserved and reported as incompatible.
+- A service-worker install completes only after its precache succeeds. Old shell caches are deleted
+  only after the current cache is complete; asset/navigation lookup can fall back to the retained
+  prior shell cache if the current cache later becomes incomplete. The supported Android release may
+  remove `share_target` only with an approved specification and supported-matrix revision.
 - A Leaflet/NLSC regression disables only the optional preview; it does not change the coordinate or
   offline core. No alternative provider is selected silently.
 - Worker-rendering regressions fall back to the same renderer on the main thread.

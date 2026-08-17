@@ -23,6 +23,9 @@ const overlay = {
   contrastStatus: 'acceptable' as const,
 };
 
+const renderFixture = async (blob: Blob, _plan: unknown, mime: 'image/jpeg' | 'image/png') =>
+  blob.slice(0, blob.size, mime);
+
 describe('single-photo orientation fidelity', () => {
   it('keeps display-oriented overlay geometry equivalent for EXIF orientations 1 through 8', async () => {
     let referenceRect: unknown;
@@ -33,6 +36,7 @@ describe('single-photo orientation fidelity', () => {
         mode: 'preview',
         orientation,
         overlays: [overlay],
+        renderCanvas: renderFixture,
       });
 
       expect(result.ok, name).toBe(true);
@@ -51,6 +55,7 @@ describe('single-photo orientation fidelity', () => {
       mode: 'preview',
       orientation: 6,
       overlays: [overlay],
+      renderCanvas: renderFixture,
     });
     const preserved = await renderPhoto(source, {
       mode: 'export',
@@ -58,6 +63,7 @@ describe('single-photo orientation fidelity', () => {
       outputFormat: 'image/jpeg',
       metadataMode: 'preserveSupported',
       overlays: [overlay],
+      renderCanvas: renderFixture,
     });
     const normalized = await renderPhoto(source, {
       mode: 'export',
@@ -65,6 +71,7 @@ describe('single-photo orientation fidelity', () => {
       outputFormat: 'image/png',
       metadataMode: 'removeSupported',
       overlays: [overlay],
+      renderCanvas: renderFixture,
     });
 
     expect(preview.ok).toBe(true);

@@ -8,7 +8,26 @@ export type WriteMetadataRequest = Readonly<{
   metadataMode: MetadataMode;
 }>;
 
-function concat(parts: readonly Uint8Array[]): Uint8Array {
+export const MAX_METADATA_OUTPUT_BYTES = 64 * 1024 * 1024;
+
+export function isMetadataOutputWithinLimit(byteLengths: readonly number[]): boolean {
+  let total = 0;
+  for (const byteLength of byteLengths) {
+    if (
+      !Number.isSafeInteger(byteLength) ||
+      byteLength < 0 ||
+      byteLength > MAX_METADATA_OUTPUT_BYTES
+    ) {
+      return false;
+    }
+    total += byteLength;
+    if (!Number.isSafeInteger(total) || total > MAX_METADATA_OUTPUT_BYTES) return false;
+  }
+  return true;
+}
+
+function concat(parts: readonly Uint8Array[]): Uint8Array | null {
+  if (!isMetadataOutputWithinLimit(parts.map((part) => part.byteLength))) return null;
   const output = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
   let offset = 0;
   for (const part of parts) {
@@ -141,7 +160,10 @@ export async function writeMetadata(
   source: Blob,
   request: WriteMetadataRequest,
   rendered: Blob = source,
-): Promise<Result<Blob, 'metadata-preservation-unavailable'>> {
+): Promise<Result<Blob, 'metadata-preservation-unavailable' | 'encode-failed'>> {
+  if (!Number.isSafeInteger(rendered.size) || rendered.size > MAX_METADATA_OUTPUT_BYTES) {
+    return failure('encode-failed');
+  }
   const parsed = await readMetadata(source);
   if (!parsed.ok || parsed.value.mime !== request.sourceMime) {
     return failure('metadata-preservation-unavailable');
@@ -157,6 +179,7 @@ export async function writeMetadata(
       const cleaned = removeJpegMetadata(renderedBytes);
       if (!metadata || !cleaned) return failure('metadata-preservation-unavailable');
       const attached = concat([cleaned.subarray(0, 2), ...metadata, cleaned.subarray(2)]);
+      if (!attached) return failure('metadata-preservation-unavailable');
       return success(new Blob([attached.buffer as ArrayBuffer], { type: request.outputMime }));
     }
     const metadata = pngMetadataChunks(sourceBytes);

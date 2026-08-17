@@ -6,6 +6,7 @@ import {
   applySharedBatchSettings,
   batchExportReadiness,
   createBatchSession,
+  removeInvalidBatchItem,
   setBatchItemDecision,
 } from '../../../src/domain/photos/batchSession';
 import type { SourcePhoto } from '../../../src/domain/photos/types';
@@ -195,6 +196,24 @@ describe('batch session', () => {
       decision: 'withoutCoordinate',
       status: 'ready',
     });
+  });
+
+  it('blocks invalid export settings and removes an invalid intake without losing editable items', () => {
+    const created = createBatchSession({
+      id: 'batch-session',
+      photos: [photo('ready')],
+      coordinates: [coordinate('ready', 'MANUAL_INPUT')],
+      configurations: [{ ...configuration('ready'), width: 8192, height: 8192 }],
+      invalidItems: [{ id: 'bad', sourceName: 'bad.txt', failureCode: 'unsupported-format' }],
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(batchExportReadiness(created.value)).toEqual({
+      ready: false,
+      unresolvedItemIds: ['ready'],
+    });
+    const removed = removeInvalidBatchItem(created.value, 'bad');
+    expect(removed.items.map((item) => item.id)).toEqual(['ready']);
   });
 
   it('rejects aggregate bytes above 80% of reported storage headroom', () => {

@@ -5,6 +5,8 @@ import type { SourcePhoto } from '../../../src/domain/photos/types';
 import { importPhoto } from '../../../src/domain/photos/importPhoto';
 import { readMetadata } from '../../../src/infrastructure/metadata/readMetadata';
 import { hashBlob } from '../../../src/infrastructure/platform/hashBlob';
+import { createBlankPng } from '../../../src/renderer/canvasRenderer';
+import { renderPhoto } from '../../../src/renderer/renderPhoto';
 import { createPhotoFixtureFile } from '../../helpers/photoFixtures';
 
 type PhotoMime = 'image/jpeg' | 'image/png';
@@ -43,6 +45,15 @@ function exportRequest(source: SourcePhoto, overrides: ExportOverrides = {}) {
   };
 }
 
+const renderPhotoForTest: typeof renderPhoto = (source, options) =>
+  renderPhoto(source, {
+    ...options,
+    renderCanvas: async (blob, plan, mime) =>
+      mime === blob.type
+        ? blob.slice(0, blob.size, mime)
+        : createBlankPng(plan.outputWidth, plan.outputHeight),
+  });
+
 describe('single-photo export safety and handoff', () => {
   it('verifies JPEG and PNG encoder MIME types and reports an accurate handedOff result', async () => {
     for (const [fixture, mime] of [
@@ -57,7 +68,10 @@ describe('single-photo export safety and handoff', () => {
         handedOffName = name;
       });
 
-      const result = await exportPhoto(source, exportRequest(source), { saveOutput });
+      const result = await exportPhoto(source, exportRequest(source), {
+        renderPhoto: renderPhotoForTest,
+        saveOutput,
+      });
 
       expect(result).toMatchObject({
         ok: true,
@@ -80,7 +94,10 @@ describe('single-photo export safety and handoff', () => {
       handedOffBlob = blob;
     });
 
-    const result = await exportPhoto(source, exportRequest(source), { saveOutput });
+    const result = await exportPhoto(source, exportRequest(source), {
+      renderPhoto: renderPhotoForTest,
+      saveOutput,
+    });
 
     expect(result).toMatchObject({
       ok: true,
@@ -147,7 +164,7 @@ describe('single-photo export safety and handoff', () => {
     const normalized = await exportPhoto(
       source,
       exportRequest(source, { format: 'image/png', metadataMode: 'removeSupported' }),
-      { saveOutput },
+      { renderPhoto: renderPhotoForTest, saveOutput },
     );
     expect(normalized).toMatchObject({
       ok: true,
@@ -175,6 +192,7 @@ describe('single-photo export safety and handoff', () => {
       exportRequest(source, { outputName: source.sourceName }),
       {
         saveOutput,
+        renderPhoto: renderPhotoForTest,
         existingOutputNames: [source.sourceName],
       },
     );
@@ -206,7 +224,10 @@ describe('single-photo export safety and handoff', () => {
       throw new Error('synthetic save failure');
     });
 
-    const result = await exportPhoto(source, exportRequest(source), { saveOutput });
+    const result = await exportPhoto(source, exportRequest(source), {
+      renderPhoto: renderPhotoForTest,
+      saveOutput,
+    });
 
     expect(result).toMatchObject({
       ok: true,

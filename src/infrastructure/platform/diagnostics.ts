@@ -15,6 +15,7 @@ export const diagnosticCodes = [
   'ambiguous-zone',
   'storage-error',
   'incompatible-version',
+  'unknown-error',
 ] as const;
 
 export type DiagnosticCode = (typeof diagnosticCodes)[number] | (string & {});
@@ -41,13 +42,18 @@ const messages: Readonly<Record<(typeof diagnosticCodes)[number], string>> = {
   'ambiguous-zone': 'The coordinate zone needs confirmation.',
   'storage-error': 'Local recovery is temporarily unavailable.',
   'incompatible-version': 'This saved draft was created by a newer application version.',
+  'unknown-error': 'The operation could not be completed.',
 };
 
 /** Create a user-safe diagnostic without retaining input, paths, coordinates, or metadata. */
 export function sanitizeDiagnostic(code: string): Diagnostic {
-  const knownCode = code as (typeof diagnosticCodes)[number];
+  const knownCode = diagnosticCodes.includes(code as (typeof diagnosticCodes)[number]);
+  const safeStableCode = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(code) && code.length <= 64;
+  const normalizedCode = knownCode || safeStableCode ? code : 'unknown-error';
   return {
-    code,
-    message: messages[knownCode] ?? 'The operation could not be completed.',
+    code: normalizedCode,
+    message: knownCode
+      ? messages[code as (typeof diagnosticCodes)[number]]
+      : 'The operation could not be completed.',
   };
 }

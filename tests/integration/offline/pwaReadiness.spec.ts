@@ -5,6 +5,7 @@ import { establishOfflineReadiness } from '../../../src/infrastructure/pwa/readi
 import {
   createShellCacheName,
   hasCompleteShell,
+  orderedShellCacheNames,
   selectOldShellCachesForDeletion,
 } from '../../../src/infrastructure/pwa/serviceWorkerPolicy';
 
@@ -57,6 +58,10 @@ describe('PWA readiness contract', () => {
     expect(hasCompleteShell(['/index.html'], first)).toBe(false);
     expect(selectOldShellCachesForDeletion(secondName, [firstName, secondName], false)).toEqual([]);
     expect(selectOldShellCachesForDeletion(secondName, [firstName, secondName], true)).toEqual([
+      firstName,
+    ]);
+    expect(orderedShellCacheNames(secondName, [firstName, secondName])).toEqual([
+      secondName,
       firstName,
     ]);
   });

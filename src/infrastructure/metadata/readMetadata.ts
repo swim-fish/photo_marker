@@ -2,6 +2,7 @@ import { gps as readGps, orientation as readOrientation } from 'exifr';
 
 import type { Wgs84Coordinate } from '../../domain/coordinates/types';
 import type { MetadataSummary, PhotoMime, PhotoOrientation } from '../../domain/photos/types';
+import { validatePhotoLimits } from '../../domain/photos/photoLimits';
 import { failure, type Result, success } from '../../domain/result';
 import { createMetadataSummary, inspectMetadataProfile } from './metadataProfile';
 
@@ -13,7 +14,10 @@ export type ReadMetadataValue = Readonly<{
   metadataSummary: MetadataSummary;
 }>;
 
-export type ReadMetadataFailure = 'unsupported-format' | 'malformed-metadata' | 'decode-failed';
+export type ReadMetadataFailure =
+  'unsupported-format' | 'over-limit' | 'malformed-metadata' | 'decode-failed';
+
+export const MAX_METADATA_INPUT_BYTES = 32 * 1024 * 1024;
 
 const pngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] as const;
 
@@ -84,6 +88,9 @@ function validGps(value: unknown): Wgs84Coordinate | null {
 export async function readMetadata(
   source: Blob,
 ): Promise<Result<ReadMetadataValue, ReadMetadataFailure>> {
+  if (!Number.isSafeInteger(source.size) || source.size > MAX_METADATA_INPUT_BYTES) {
+    return failure('over-limit');
+  }
   const bytes = new Uint8Array(await source.arrayBuffer());
   const mime = detectedMime(bytes);
   if (!mime) {
@@ -97,6 +104,11 @@ export async function readMetadata(
 
   const dimensions = mime === 'image/png' ? pngDimensions(bytes) : jpegDimensions(bytes);
   if (!dimensions || dimensions[0] < 1 || dimensions[1] < 1) return failure('decode-failed');
+  if (
+    !validatePhotoLimits({ bytes: source.size, width: dimensions[0], height: dimensions[1] }).ok
+  ) {
+    return failure('over-limit');
+  }
 
   try {
     const [orientationValue, gpsValue] = await Promise.all([

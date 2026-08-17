@@ -2,12 +2,7 @@ import type { TextOverlay } from '../domain/overlays/types';
 import type { PhotoMime, PhotoOrientation } from '../domain/photos/types';
 import { failure, type Result, success } from '../domain/result';
 import { readMetadata } from '../infrastructure/metadata/readMetadata';
-import {
-  createBlankPng,
-  createRenderPlan,
-  renderCanvasBlob,
-  type RenderPlan,
-} from './canvasRenderer';
+import { createRenderPlan, renderCanvasBlob, type RenderPlan } from './canvasRenderer';
 
 export { createRenderPlan } from './canvasRenderer';
 
@@ -24,6 +19,7 @@ export type RenderPhotoOptions = Readonly<{
   metadataMode?: 'preserveSupported' | 'removeSupported';
   workerAvailable?: boolean;
   quality?: number;
+  renderCanvas?: typeof renderCanvasBlob;
   resources?: RenderResources;
 }>;
 
@@ -63,12 +59,12 @@ export async function renderPhoto(
             orientationMode: 'bakeUpright',
           }
         : plan;
-    const rendered = await renderCanvasBlob(source, canvasPlan, outputFormat, options.quality);
-    const blob =
-      rendered ??
-      (outputFormat === 'image/png' && sourceFormat !== outputFormat
-        ? createBlankPng(canvasPlan.outputWidth, canvasPlan.outputHeight)
-        : source.slice(0, source.size, outputFormat));
+    const blob = await (options.renderCanvas ?? renderCanvasBlob)(
+      source,
+      canvasPlan,
+      outputFormat,
+      options.quality,
+    );
     if (!blob) return failure('encode-failed');
     if (blob.type !== outputFormat) return failure('encode-failed');
 

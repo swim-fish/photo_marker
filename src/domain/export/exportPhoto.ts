@@ -97,7 +97,9 @@ export async function exportPhoto(
   source: SourcePhoto,
   request: ExportPhotoRequest,
   dependencies: ExportPhotoDependencies = {},
-): Promise<Result<ExportResult, 'invalid-input' | 'metadata-preservation-unavailable'>> {
+): Promise<
+  Result<ExportResult, 'invalid-input' | 'metadata-preservation-unavailable' | 'encode-failed'>
+> {
   if (source.id !== request.photoId) return failure('invalid-input');
   if (request.metadataMode === 'preserveSupported' && request.format !== source.sourceMime) {
     return failure('metadata-preservation-unavailable');
@@ -170,7 +172,7 @@ export async function exportPhoto(
     },
     rendered.value.blob,
   );
-  if (!metadata.ok) return failure('metadata-preservation-unavailable');
+  if (!metadata.ok) return failure(metadata.error.code);
   const metadataDuration = performance.now() - metadataStarted;
   if (dependencies.signal?.aborted) return cancelled();
 

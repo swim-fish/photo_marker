@@ -6,6 +6,7 @@ import {
   createShellCacheName,
   hasCompleteShell,
   isPrecacheCandidate,
+  orderedShellCacheNames,
   requiredShellUrls,
   selectOldShellCachesForDeletion,
   type PrecacheEntry,
@@ -25,6 +26,15 @@ async function shellComplete(): Promise<boolean> {
     (await cache.keys()).map((request) => request.url),
     manifest,
   );
+}
+
+async function matchAvailableShell(pathname: string): Promise<Response | undefined> {
+  const names = orderedShellCacheNames(shellCacheName, await caches.keys());
+  for (const name of names) {
+    const response = await (await caches.open(name)).match(pathname, { ignoreVary: true });
+    if (response) return response;
+  }
+  return undefined;
 }
 
 self.addEventListener('install', (event) => {
@@ -86,17 +96,12 @@ self.addEventListener('fetch', (event) => {
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request).catch(async () => {
-        const cached = await (await caches.open(shellCacheName)).match('/index.html');
+        const cached = await matchAvailableShell('/index.html');
         return cached ?? new Response('Offline application shell unavailable.', { status: 503 });
       }),
     );
     return;
   }
 
-  event.respondWith(
-    caches
-      .open(shellCacheName)
-      .then((cache) => cache.match(url.pathname, { ignoreVary: true }))
-      .then((cached) => cached ?? fetch(request)),
-  );
+  event.respondWith(matchAvailableShell(url.pathname).then((cached) => cached ?? fetch(request)));
 });

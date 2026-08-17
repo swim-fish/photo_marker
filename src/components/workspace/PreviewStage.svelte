@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onDestroy, onMount } from 'svelte';
+
   import { messages } from '../../i18n';
   import type { TextOverlay } from '../../domain/overlays/types';
 
@@ -21,6 +23,21 @@
   } = $props();
 
   let zoom = $state(1);
+  let photoElement = $state<HTMLDivElement>();
+  let photoWidth = $state(1);
+  let photoHeight = $state(1);
+  let sizeObserver: ResizeObserver | undefined;
+
+  onMount(() => {
+    if (!photoElement || typeof ResizeObserver === 'undefined') return;
+    sizeObserver = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      photoWidth = Math.max(1, entry.contentRect.width);
+      photoHeight = Math.max(1, entry.contentRect.height);
+    });
+    sizeObserver.observe(photoElement);
+  });
+  onDestroy(() => sizeObserver?.disconnect());
 
   function handleKey(event: KeyboardEvent, overlayId: string): void {
     const step = event.shiftKey ? 0.05 : 0.01;
@@ -54,7 +71,7 @@
     </div>
   </div>
   <div class="viewport">
-    <div class="photo" style:transform={`scale(${zoom})`}>
+    <div bind:this={photoElement} class="photo" style:transform={`scale(${zoom})`}>
       <img src={photoUrl} alt={photoAlt} />
       {#each overlays as overlay (overlay.id)}
         <button
@@ -65,14 +82,23 @@
           style:top={`${overlay.y * 100}%`}
           style:width={`${overlay.width * 100}%`}
           style:height={`${overlay.height * 100}%`}
-          style:color={typeof overlay.textColor === 'string' ? overlay.textColor : undefined}
-          style:background={typeof overlay.backgroundColor === 'string'
-            ? overlay.backgroundColor
-            : undefined}
           aria-label={`${t.selectAndMoveOverlay} ${overlay.role} ${t.overlayWord}`}
           onclick={() => onSelect(overlay.id)}
-          onkeydown={(event) => handleKey(event, overlay.id)}>{overlay.content}</button
+          onkeydown={(event) => handleKey(event, overlay.id)}
         >
+          <span
+            class="overlay-content"
+            style:color={typeof overlay.textColor === 'string' ? overlay.textColor : undefined}
+            style:background={typeof overlay.backgroundColor === 'string'
+              ? overlay.backgroundColor
+              : undefined}
+            style:font-family={`"${overlay.fontFamily}", sans-serif`}
+            style:font-size={`${overlay.fontSize * photoHeight}px`}
+            style:line-height={overlay.lineHeight}
+            style:padding={`${overlay.padding * Math.min(photoWidth, photoHeight)}px`}
+            >{overlay.content}</span
+          >
+        </button>
       {/each}
     </div>
   </div>
@@ -117,14 +143,16 @@
 
   .photo {
     position: relative;
-    width: fit-content;
-    max-width: 100%;
+    width: 100%;
+    max-width: 50rem;
     margin: auto;
     transform-origin: top left;
   }
 
   img {
     display: block;
+    width: 100%;
+    height: auto;
     max-width: 100%;
     max-height: 65vh;
     object-fit: contain;
@@ -132,12 +160,30 @@
 
   .overlay {
     position: absolute;
-    overflow: hidden;
-    min-width: 24px;
-    min-height: 24px;
-    padding: 0.25rem;
+    min-width: 1px;
+    min-height: 1px;
+    padding: 0;
     border: 2px solid transparent;
-    touch-action: none;
+    background: transparent;
+    touch-action: auto;
+  }
+
+  .overlay::before {
+    position: absolute;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    content: '';
+    inset: 50% auto auto 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .overlay-content {
+    position: absolute;
+    overflow: hidden;
+    box-sizing: border-box;
+    display: block;
+    inset: 0;
+    text-align: left;
     white-space: pre-wrap;
   }
 

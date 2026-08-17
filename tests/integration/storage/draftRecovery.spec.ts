@@ -167,7 +167,7 @@ describe('draft recovery integration', () => {
     db.close();
     const result = await repository.restore(sessionId);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe('storage-error');
+    if (!result.ok) expect(result.error.code).toBe('migration-failed');
 
     const previous = await new DraftRepository({ migrate: undefined }).restore(sessionId);
     expect(previous.ok).toBe(true);

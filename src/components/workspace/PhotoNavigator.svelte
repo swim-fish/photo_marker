@@ -16,10 +16,12 @@
     items,
     activeItemId,
     onSelect = () => undefined,
+    onRemove = () => undefined,
   }: {
     items: readonly PhotoNavigatorEntry[];
     activeItemId: string;
     onSelect?: (id: string) => void;
+    onRemove?: (id: string) => void;
   } = $props();
 </script>
 
@@ -27,7 +29,7 @@
   <p><strong>{items.length}</strong> {t.intakeResults}</p>
   <ul>
     {#each items as item (item.id)}
-      <PhotoNavigatorItem {...item} active={item.id === activeItemId} {onSelect} />
+      <PhotoNavigatorItem {...item} active={item.id === activeItemId} {onSelect} {onRemove} />
     {/each}
   </ul>
 </nav>

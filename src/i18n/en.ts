@@ -238,6 +238,13 @@ export const en = {
   applicationStatus: 'Application and local draft status',
   unknownPhoto: 'this photo',
   localDraftRestored: 'Local draft restored. Review the photo before export.',
+  incompatibleDraftRecovery:
+    'A local draft was created by a newer app version. Update the app and retry; the draft was kept unchanged.',
+  failedDraftRecovery:
+    'A local draft could not be restored safely. Reload or update the app and retry; the draft was kept unchanged.',
+  retryDraftRecovery: 'Retry draft recovery',
+  resolveExportSettings: 'Resolve the export settings for this photo before continuing.',
+  removeInvalidPhoto: 'Remove invalid photo',
   batchPhotos: 'Batch photos',
   intakeResults: 'intake results',
   sharedBatchSettings: 'Shared batch settings',
