@@ -9,10 +9,15 @@
   import MapPreview from '../map/MapPreview.svelte';
   import OverlayInspector from '../overlays/OverlayInspector.svelte';
   import OverlayList from '../overlays/OverlayList.svelte';
+  import DraftRecovery from './DraftRecovery.svelte';
+  import DraftStatus from './DraftStatus.svelte';
   import type { CoordinateRecord, Wgs84Coordinate } from '../../domain/coordinates/types';
   import { formatCoordinate } from '../../domain/coordinates/formatCoordinate';
   import type { ParsedCoordinate } from '../../domain/coordinates/parseCoordinateInput';
   import { replaceWorkingCoordinate } from '../../domain/coordinates/workingCoordinate';
+  import { createDraftService, type DraftService } from '../../domain/drafts/draftService';
+  import { createEditingSession, editingSessionReducer } from '../../domain/drafts/editingSession';
+  import type { EditingSession } from '../../domain/drafts/types';
   import { exportPhoto } from '../../domain/export/exportPhoto';
   import type { ExportConfiguration, ExportResult } from '../../domain/export/types';
   import {
@@ -35,8 +40,20 @@
   import { importPhoto } from '../../domain/photos/importPhoto';
   import type { SourcePhoto } from '../../domain/photos/types';
   import { requestCurrentLocation } from '../../infrastructure/platform/geolocation';
+  import {
+    DraftRepository,
+    type DraftSnapshot,
+  } from '../../infrastructure/storage/draftRepository';
+  import { openDraftDatabase } from '../../infrastructure/storage/database';
+  import {
+    establishOfflineReadiness,
+    type OfflineReadinessResult,
+    requestWorkerReadiness,
+  } from '../../infrastructure/pwa/readiness';
   import { messages } from '../../i18n';
   import ImportPanel from './ImportPanel.svelte';
+  import InstallHelp from './InstallHelp.svelte';
+  import OfflineStatus from './OfflineStatus.svelte';
   import PhotoStatus from './PhotoStatus.svelte';
   import PreviewStage from './PreviewStage.svelte';
   import StatusRegion from './StatusRegion.svelte';
@@ -45,6 +62,7 @@
 
   type ViewState = 'empty' | 'loading' | 'error' | 'editing' | 'exporting' | 'success';
   type InspectorTab = 'coordinate' | 'overlays' | 'export';
+  type DraftUiStatus = 'idle' | 'saving' | 'saved' | 'denied' | 'quotaExceeded' | 'error';
 
   let viewState = $state<ViewState>('empty');
   let inspectorTab = $state<InspectorTab>('coordinate');
@@ -60,6 +78,15 @@
   let reviewOpen = $state(false);
   let outputName = $state('');
   let exportResults = $state<ExportResult[]>([]);
+  let draftSession = $state<EditingSession | null>(null);
+  let draftStatus = $state<DraftUiStatus>('idle');
+  let recoverableDraft = $state<DraftSnapshot | null>(null);
+  let draftRecoveryOpen = $state(false);
+  let offlineReadiness = $state<OfflineReadinessResult>({
+    status: 'not-ready',
+    reason: 'service-worker-unavailable',
+  });
+  let installedApp = $state(false);
   let mapConsent = $state<MapNetworkConsent>({
     policyVersion: MAP_CONSENT_POLICY_VERSION,
     status: 'unknown',
@@ -71,6 +98,25 @@
   let mapPreviewOpen = $state(false);
   let isOnline = $state(true);
   let statusMessage = $state<string>(t.readyStatus);
+
+  const draftRepository = new DraftRepository();
+  let draftService: DraftService;
+  draftService = createDraftService({
+    repository: draftRepository,
+    onSave: (result) => {
+      if (!result.ok) {
+        draftStatus = result.error.code === 'quota-exceeded' ? 'quotaExceeded' : 'error';
+        return;
+      }
+      draftStatus = result.value.persistenceStatus === 'denied' ? 'denied' : 'saved';
+      if (draftSession?.id === result.value.sessionId) {
+        draftSession = editingSessionReducer(draftSession, {
+          type: 'mark-persisted',
+          revision: result.value.revision,
+        });
+      }
+    },
+  });
 
   const selectedOverlay = $derived(
     overlays.find((overlay) => overlay.id === selectedOverlayId) ?? null,
@@ -117,20 +163,75 @@
     photoUrl = '';
   }
 
+  function currentDraftSnapshot(): DraftSnapshot | null {
+    if (!draftSession || !photo || !configuration) return null;
+    return $state.snapshot({
+      session: draftSession,
+      photos: [photo],
+      coordinates: coordinate ? [coordinate] : [],
+      overlays,
+      exportConfigurations: [configuration],
+      exportResults,
+    }) as DraftSnapshot;
+  }
+
+  function scheduleCurrentDraft(touch = true): void {
+    if (!draftSession) return;
+    if (touch) draftSession = editingSessionReducer(draftSession, { type: 'touch' });
+    const snapshot = currentDraftSnapshot();
+    if (!snapshot) return;
+    draftStatus = 'saving';
+    draftService.scheduleSave(snapshot);
+  }
+
+  async function refreshOfflineReadiness(): Promise<void> {
+    if (!('serviceWorker' in navigator)) return;
+    offlineReadiness = await establishOfflineReadiness({
+      isSecureContext: window.isSecureContext,
+      requestWorkerReport: () => requestWorkerReadiness(navigator.serviceWorker),
+      openDatabase: async () => {
+        const database = await openDraftDatabase();
+        database.close();
+      },
+    });
+  }
+
+  async function findRecoverableDraft(): Promise<void> {
+    const result = await draftService.restoreLatest();
+    if (!result.ok) return;
+    recoverableDraft = result.value;
+    draftRecoveryOpen = true;
+  }
+
   onMount(() => {
     mapConsent = readMapConsent(localStorage);
     isOnline = navigator.onLine;
+    installedApp = window.matchMedia('(display-mode: standalone)').matches;
+    void refreshOfflineReadiness();
+    void findRecoverableDraft();
     const handleOnline = () => (isOnline = true);
     const handleOffline = () => (isOnline = false);
+    const flushDraft = () => void draftService.flush();
+    const flushHiddenDraft = () => {
+      if (document.visibilityState === 'hidden') flushDraft();
+    };
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('pointerup', flushDraft);
+    document.addEventListener('visibilitychange', flushHiddenDraft);
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('pointerup', flushDraft);
+      document.removeEventListener('visibilitychange', flushHiddenDraft);
     };
   });
 
-  onDestroy(revokePhotoUrl);
+  onDestroy(() => {
+    revokePhotoUrl();
+    draftService.dispose();
+    draftRepository.close();
+  });
 
   function outputNameFor(source: SourcePhoto): string {
     const dot = source.sourceName.lastIndexOf('.');
@@ -242,6 +343,44 @@
     }
     viewState = 'editing';
     statusMessage = `${result.value.sourceName} ${t.importedLocallySuffix}`;
+    draftSession = editingSessionReducer(
+      createEditingSession({ id: result.value.sessionId, photoIds: [result.value.id] }),
+      { type: 'transition', status: 'editing' },
+    );
+    scheduleCurrentDraft(false);
+  }
+
+  function resumeRecoveredDraft(): void {
+    const snapshot = recoverableDraft;
+    const restoredPhoto = snapshot?.photos[0];
+    const restoredConfiguration = snapshot?.exportConfigurations?.[0];
+    if (!snapshot || !restoredPhoto || !restoredConfiguration) return;
+    revokePhotoUrl();
+    photo = restoredPhoto;
+    photoUrl = URL.createObjectURL(restoredPhoto.sourceBlob);
+    coordinate = snapshot.coordinates?.[0] ?? null;
+    overlays = [...(snapshot.overlays ?? [])];
+    selectedOverlayId = overlays[0]?.id ?? null;
+    configuration = restoredConfiguration;
+    exportResults = [...(snapshot.exportResults ?? [])];
+    draftSession = snapshot.session;
+    draftStatus = 'saved';
+    viewState = 'editing';
+    inspectorTab = 'coordinate';
+    draftRecoveryOpen = false;
+    statusMessage = t.localDraftRestored;
+  }
+
+  async function discardRecoveredDraft(): Promise<void> {
+    if (!recoverableDraft) return;
+    const result = await draftService.discard(recoverableDraft.session.id);
+    if (!result.ok) {
+      draftStatus = 'error';
+      return;
+    }
+    recoverableDraft = null;
+    draftRecoveryOpen = false;
+    draftStatus = 'idle';
   }
 
   function handleManualCoordinate(value: ParsedCoordinate): void {
@@ -266,6 +405,7 @@
     manualError = '';
     syncCoordinateOverlay(result.value);
     statusMessage = t.manualWorkingCoordinateAccepted;
+    scheduleCurrentDraft();
   }
 
   function handleDisplayChange(selection: {
@@ -292,6 +432,7 @@
     manualError = '';
     syncCoordinateOverlay(coordinate);
     statusMessage = t.displayFormatUpdated;
+    scheduleCurrentDraft();
   }
 
   function requestMapPreview(): void {
@@ -336,6 +477,7 @@
     coordinate = result.value;
     syncCoordinateOverlay(result.value);
     statusMessage = `${t.currentGps} accepted with ${result.value.accuracyMeters} ${t.metresSuffix} ${t.currentGpsAccuracySuffix}`;
+    scheduleCurrentDraft();
   }
 
   function addOverlay(role: OverlayRole): void {
@@ -364,6 +506,7 @@
     overlays = [...overlays, overlay];
     selectedOverlayId = overlay.id;
     inspectorTab = 'overlays';
+    scheduleCurrentDraft();
   }
 
   function updateSelected(update: Partial<TextOverlay>): void {
@@ -371,6 +514,7 @@
     overlays = overlays.map((overlay) =>
       overlay.id === selectedOverlayId ? updateOverlay(overlay, update) : overlay,
     );
+    scheduleCurrentDraft();
   }
 
   function moveSelected(dx: number, dy: number): void {
@@ -378,6 +522,7 @@
     overlays = overlays.map((overlay) =>
       overlay.id === selectedOverlayId ? moveOverlay(overlay, { dx, dy }) : overlay,
     );
+    scheduleCurrentDraft();
   }
 
   function moveById(overlayId: string, dx: number, dy: number): void {
@@ -385,6 +530,7 @@
     overlays = overlays.map((overlay) =>
       overlay.id === overlayId ? moveOverlay(overlay, { dx, dy }) : overlay,
     );
+    scheduleCurrentDraft();
   }
 
   function resizeSelected(dw: number, dh: number): void {
@@ -392,12 +538,25 @@
     overlays = overlays.map((overlay) =>
       overlay.id === selectedOverlayId ? resizeOverlay(overlay, { dw, dh }) : overlay,
     );
+    scheduleCurrentDraft();
   }
 
   function removeSelected(): void {
     if (!selectedOverlayId) return;
     overlays = removeOverlay(overlays, selectedOverlayId);
     selectedOverlayId = overlays[0]?.id ?? null;
+    scheduleCurrentDraft();
+  }
+
+  function removeOverlayById(overlayId: string): void {
+    overlays = removeOverlay(overlays, overlayId);
+    if (selectedOverlayId === overlayId) selectedOverlayId = overlays[0]?.id ?? null;
+    scheduleCurrentDraft();
+  }
+
+  function reorderOverlayById(overlayId: string, index: number): void {
+    overlays = reorderOverlays(overlays, overlayId, index);
+    scheduleCurrentDraft();
   }
 
   function updateConfiguration(update: Partial<ExportConfiguration>): void {
@@ -419,6 +578,16 @@
             }
           : null,
     };
+    scheduleCurrentDraft();
+  }
+
+  async function openExportReview(): Promise<void> {
+    const snapshot = currentDraftSnapshot();
+    if (snapshot) {
+      draftStatus = 'saving';
+      await draftService.flush(snapshot);
+    }
+    reviewOpen = true;
   }
 
   async function confirmExport(): Promise<void> {
@@ -441,6 +610,9 @@
       outputName = result.value.outputName ?? configuration.outputName;
       statusMessage = `${t.exportSuccessPrefix} ${outputName} ${t.exportSuccessSuffix}`;
       viewState = 'success';
+      if (draftSession) await draftService.cleanupAfterExport(draftSession.id);
+      draftSession = null;
+      draftStatus = 'idle';
       return;
     }
     errorMessage = result.ok
@@ -448,6 +620,7 @@
       : result.error.message;
     statusMessage = t.exportFailed;
     viewState = 'error';
+    scheduleCurrentDraft();
   }
 </script>
 
@@ -459,6 +632,22 @@
     </div>
     <span class="privacy">{t.localOnlyCore}</span>
   </header>
+
+  <section class="application-status" aria-label={t.applicationStatus}>
+    <OfflineStatus readiness={offlineReadiness} online={isOnline} />
+    <DraftStatus status={draftStatus} />
+    {#if !installedApp}
+      <InstallHelp installed={installedApp} />
+    {/if}
+  </section>
+
+  <DraftRecovery
+    open={draftRecoveryOpen}
+    sourceName={recoverableDraft?.photos[0]?.sourceName ?? t.unknownPhoto}
+    onClose={() => (draftRecoveryOpen = false)}
+    onResume={resumeRecoveredDraft}
+    onDiscard={discardRecoveredDraft}
+  />
 
   {#if viewState === 'empty'}
     <ImportPanel onFiles={handleFiles} />
@@ -553,11 +742,8 @@
             {overlays}
             selectedId={selectedOverlayId}
             onSelect={(id) => (selectedOverlayId = id)}
-            onRemove={(id) => {
-              overlays = removeOverlay(overlays, id);
-              if (selectedOverlayId === id) selectedOverlayId = overlays[0]?.id ?? null;
-            }}
-            onReorder={(id, index) => (overlays = reorderOverlays(overlays, id, index))}
+            onRemove={removeOverlayById}
+            onReorder={reorderOverlayById}
           />
           <OverlayInspector
             overlay={selectedOverlay}
@@ -576,7 +762,7 @@
             class="primary"
             disabled={!canReview || viewState === 'exporting'}
             aria-describedby={!canReview ? 'review-disabled-reason' : undefined}
-            onclick={() => (reviewOpen = true)}>{t.reviewExport}</button
+            onclick={openExportReview}>{t.reviewExport}</button
           >
           {#if !canReview}
             <p id="review-disabled-reason">{disabledReason}</p>
@@ -644,6 +830,13 @@
 
   .app-header {
     justify-content: space-between;
+  }
+
+  .application-status {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+    gap: 0.75rem;
   }
 
   h1,
@@ -747,7 +940,8 @@
     }
 
     .workspace-grid,
-    .photo-rail {
+    .photo-rail,
+    .application-status {
       grid-template-columns: minmax(0, 1fr);
     }
 

@@ -207,6 +207,37 @@ export const en = {
   coordinateZoneError: 'Select a TM2 zone or provide a coordinate that can be resolved safely.',
   displayFormatUnavailable: 'The selected display format is unavailable for this coordinate.',
   displayFormatUpdated: 'Coordinate display format updated.',
+  offlineReady: 'Offline ready',
+  workingOffline: 'Working offline',
+  onlineNow: 'Online',
+  offlineNotReady: 'Offline use is not ready',
+  insecureContextHelp: 'Open the installed app or a secure HTTPS address.',
+  serviceWorkerHelp: 'The offline service worker is not active yet. Reload while online.',
+  shellIncompleteHelp: 'The application shell is still downloading. Keep this page open online.',
+  databaseUnavailableHelp: 'Local draft storage could not be opened. Editing remains in memory.',
+  savingDraft: 'Saving…',
+  savedLocally: 'Saved locally',
+  bestEffortDraft:
+    'Best-effort local draft. Browser storage may be evicted; this does not block editing.',
+  draftStorageFull: 'Local storage is full. Export or discard work, then retry saving.',
+  draftSaveFailed: 'The app could not save this draft locally. Current in-memory work remains.',
+  draftNotStarted: 'Draft not saved yet',
+  resumeLocalDraft: 'Resume local draft',
+  draftFoundPrefix: 'A local draft is available for',
+  draftRecoveryLimit:
+    'Local recovery is not a permanent backup and can be removed with browser site data.',
+  resumeDraft: 'Resume draft',
+  discardDraft: 'Discard draft',
+  confirmDiscardWarning: 'Discarding this local draft cannot be undone.',
+  confirmDiscard: 'Confirm discard',
+  cancelDiscard: 'Cancel discard',
+  installPhotoMarker: 'Install Photo Marker',
+  installHelp:
+    'Use your browser menu and choose Install app or Add to Home screen. Installation is controlled by the browser.',
+  installedApp: 'Photo Marker is running as an installed app.',
+  applicationStatus: 'Application and local draft status',
+  unknownPhoto: 'this photo',
+  localDraftRestored: 'Local draft restored. Review the photo before export.',
 } as const;
 
 export type EnglishMessageKey = keyof typeof en;

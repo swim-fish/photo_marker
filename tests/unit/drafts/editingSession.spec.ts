@@ -96,4 +96,14 @@ describe('editing-session reducer', () => {
     expect(regressed).toBe(persisted);
     expect(regressed.lastPersistedRevision).toBe(2);
   });
+
+  it('increments once when a completed editor interaction touches the draft', () => {
+    const editing = editingSessionReducer(session, { type: 'transition', status: 'editing' });
+    const touched = editingSessionReducer(editing, {
+      type: 'touch',
+      now: '2026-08-17T00:00:02.000Z',
+    });
+    expect(touched.revision).toBe(editing.revision + 1);
+    expect(touched.updatedAt).toBe('2026-08-17T00:00:02.000Z');
+  });
 });

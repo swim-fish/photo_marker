@@ -150,3 +150,75 @@ introduced.
 map disclosure, online/offline/provider-error states, permanent attribution, responsive reflow, and
 focus behavior match the English requirements already documented in
 `docs/ui/photo-annotation-workspace.md`.
+
+## Phase 5 — Offline Draft Recovery and Installable Shell
+
+**Scope**: T043–T053, including transactional IndexedDB drafts, reload recovery and cleanup,
+install/offline/storage states, an atomic application-shell cache, local-only request policy, and a
+build-time-disabled Web Share Target gate. T054 remains open for representative physical-device and
+assistive-technology release validation.
+
+### Red-Green-Refactor evidence
+
+- RED — storage, PWA-policy, share-target, and adaptive-status suites first failed because their
+  modules did not exist. The editing-session `touch` characterization also failed before draft
+  revision support was added.
+- RED — the first production offline journey exposed an IndexedDB `TransactionInactiveError` while
+  saving photo bytes; Blob bytes are now prepared before the transactional write begins.
+- RED — a delayed Web Share Target file read reproduced the same inactive-transaction class in the
+  actual share-intake repository. Shared bytes and records are now prepared before its write
+  transaction opens.
+- RED — the next offline journey restored `index.html` but failed to load module/CSS assets because
+  request-object matching did not reliably select the precached response. Same-origin application
+  shell lookups now use exact cached pathnames with `Vary` ignored; user content and map tiles remain
+  outside Cache Storage.
+- GREEN — the focused Phase 5 suite passes 8 files and 34 tests, and both scoped production offline
+  journeys pass after the smallest fixes above.
+
+### Automated checks
+
+| Check | Outcome |
+| --- | --- |
+| Focused draft/storage/PWA/privacy/adaptive suites | PASS — 8 files, 34 tests |
+| Production offline E2E | PASS — desktop Chrome and Pixel 5 emulation; 2 opposite-project skips by test scope |
+| Offline behavior | PASS — controlled worker, complete shell cache, disconnected reload, draft resume, local export, and post-export cleanup |
+| Default Web Share Target gate | PASS — production manifest omits `share_target` |
+| Explicitly enabled manifest build | PASS — exact local POST `/share-target`, `photos` field, and JPEG/PNG accept list emitted |
+| Production CSP and cache boundary | PASS — `connect-src 'none'`; NLSC only in `img-src`; no source photo or map tile in the shell cache |
+| Full Vitest regression suite | PASS — 28 files, 159 tests |
+| TypeScript/Svelte typecheck | PASS — 0 errors, 0 warnings |
+| ESLint and Prettier | PASS — 0 lint warnings; all matched files formatted |
+| Production build | PASS — 12 shell entries, 1,511.01 KiB total; custom service worker 3.37 KiB gzip |
+
+### Visual and interaction inspection
+
+- PASS — 1440×900 desktop empty/offline-ready state retains a clear status hierarchy, install help,
+  and local import action.
+- PASS — 393×852 mobile draft recovery presents the source name, limitation text, initial focus,
+  resume/discard/later actions, and a non-obscured underlying workspace.
+- PASS — 320 CSS px empty state has no horizontal document overflow; its import target measures 53
+  CSS px high. Keyboard focus containment, Escape, destructive confirmation, and focus return pass
+  the component interaction suite.
+
+### Skipped checks and remaining release blockers
+
+- T054 is intentionally not marked complete. Physical Android Chrome and Windows Edge installed-PWA
+  validation, real touch behavior, browser 400% zoom, and screen-reader smoke were not available in
+  this workspace.
+- Web Share Target remains disabled by default. It must not be enabled for a supported Android
+  release until a physical-device test proves the POST is intercepted locally with zero fallback
+  egress, or an approved specification/platform-matrix revision removes that support claim.
+- Chromium network emulation does not update `navigator.onLine`; the E2E separately dispatches the
+  standard `offline` event to validate the status announcement, while the actual shell reload and
+  export still run with browser networking disabled.
+- No extended performance test was run. Phase 5 does not alter image rendering, and its only new
+  measurable build path is the small application-shell/service-worker output recorded above.
+
+**ADR impact: none.** The implementation follows ADR-0001's approved IndexedDB, custom service
+worker, local-only processing boundary, stable manifest identity, and gated Web Share Target design.
+No new dependency strategy, public contract, migration policy, security boundary, or performance
+tradeoff was introduced.
+
+**UI documentation impact: none.** The implemented offline readiness, saving/storage failures,
+recovery dialog, install guidance, and adaptive layouts match the English states and behavior already
+documented in `docs/ui/photo-annotation-workspace.md`.

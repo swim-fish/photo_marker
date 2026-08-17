@@ -25,6 +25,10 @@ export type EditingSessionAction =
   | Readonly<{
       type: 'set-persistence-status';
       persistenceStatus: EditingSession['persistenceStatus'];
+    }>
+  | Readonly<{
+      type: 'touch';
+      now?: string;
     }>;
 
 const transitions: Readonly<Record<EditingSessionStatus, readonly EditingSessionStatus[]>> = {
@@ -125,6 +129,11 @@ export function editingSessionReducer(
     case 'set-persistence-status':
       if (session.persistenceStatus === action.persistenceStatus) return session;
       return { ...session, persistenceStatus: action.persistenceStatus };
+
+    case 'touch':
+      return session.status === 'completed' || session.status === 'discarded'
+        ? session
+        : bump(session, action.now);
   }
 }
 
