@@ -1,4 +1,4 @@
-export const SHARE_TARGET_ACTION = '/share-target';
+export const SHARE_TARGET_ACTION = `${import.meta.env.BASE_URL}share-target`;
 export const SHARE_TARGET_FIELD = 'photos';
 const SUPPORTED_TYPES = new Set(['image/jpeg', 'image/png']);
 
@@ -45,6 +45,6 @@ export async function handleShareTargetRequest(
   }
 
   await options.persist(files);
-  return new Response(null, { status: 303, headers: { Location: '/' } });
+  return new Response(null, { status: 303, headers: { Location: import.meta.env.BASE_URL } });
 }
 import { MAX_BYTES_PER_PHOTO, MAX_PHOTOS } from '../../domain/photos/photoLimits';

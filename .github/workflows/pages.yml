@@ -1,0 +1,71 @@
+name: Deploy release to GitHub Pages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to deploy (for example v1.0.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Check release version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: node --input-type=module -e "import fs from 'node:fs'; const {version} = JSON.parse(fs.readFileSync('package.json')); if (process.env.RELEASE_TAG !== 'v' + version) throw new Error('Release tag must match package.json version');"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+        env:
+          PHOTO_MARKER_BASE_PATH: /photo_marker/
+      - run: npx playwright install --with-deps chromium
+      - name: Verify Pages build and offline startup
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4176 --base /photo_marker/ &
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:4176/photo_marker/ > /dev/null; then break; fi
+            sleep 1
+          done
+          npx playwright test tests/e2e/pages-release.spec.ts
+        env:
+          PAGES_RELEASE_TEST: '1'
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:4176
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -8,7 +8,7 @@ export function ensureEditorFont(): Promise<void> {
   return (loading ??= (async () => {
     const face = new FontFace(
       'Noto Sans TC',
-      'url(/fonts/noto-sans-tc-chinese-traditional-400-normal.woff2)',
+      `url(${import.meta.env.BASE_URL}fonts/noto-sans-tc-chinese-traditional-400-normal.woff2)`,
     );
     await face.load();
     fonts.add(face);

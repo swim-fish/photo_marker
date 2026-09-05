@@ -129,7 +129,7 @@ describe('sequential batch export', () => {
         events.push(`checkpoint:${completed.photoId}:done`);
       },
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await vi.waitFor(() => expect(events).toContain('checkpoint:one:start'));
     expect(exportOne).toHaveBeenCalledOnce();
     releaseCheckpoint?.();
     await run;

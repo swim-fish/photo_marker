@@ -37,7 +37,9 @@ async function liveMapPermission(clientId: string): Promise<boolean> {
   });
 }
 
-const manifest = self.__WB_MANIFEST.filter((entry) => isPrecacheCandidate(entry.url));
+const manifest = self.__WB_MANIFEST
+  .filter((entry) => isPrecacheCandidate(entry.url))
+  .map((entry) => ({ ...entry, url: new URL(entry.url, self.registration.scope).pathname }));
 const shellUrls = requiredShellUrls(manifest);
 const shellCacheName = createShellCacheName(manifest);
 
@@ -142,7 +144,7 @@ self.addEventListener('fetch', (event) => {
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request).catch(async () => {
-        const cached = await matchAvailableShell('/index.html');
+        const cached = await matchAvailableShell(`${import.meta.env.BASE_URL}index.html`);
         return cached ?? new Response('Offline application shell unavailable.', { status: 503 });
       }),
     );

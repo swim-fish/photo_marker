@@ -1,4 +1,5 @@
 <script lang="ts">
+  const version = __APP_VERSION__;
   import { tick, type Snippet } from 'svelte';
   let {
     title,
@@ -20,9 +21,17 @@
     <p>{subtitle}</p>
   </header>
   {#if children}{@render children()}{/if}
+  <footer aria-label="版本資訊">Photo Marker v{version}</footer>
 </main>
 
 <style>
+  footer {
+    margin-top: auto;
+    padding-top: 24px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--pm-color-muted);
+  }
   :global(body) {
     background: var(--pm-color-bg);
     color: var(--pm-color-ink);
