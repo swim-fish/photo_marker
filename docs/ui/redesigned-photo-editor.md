@@ -92,3 +92,83 @@ Offline readiness, draft persistence failure and download/share handoff messages
 
 Automated screenshots cover the main phone views and 320/768/1280 px style controls. Full 19-state
 approval across the device matrix and physical on-screen-keyboard inspection remain release work.
+
+## 2026-09-05 map and orientation amendment
+
+This amendment supersedes the earlier three-NLSC-layer contract. The map catalogue and
+centered zoom behavior follow swim-fish/pwa_map commit
+`a8fb5b88de8f77f5cba517448d4911d3cccb2fc5`.
+
+- Default: OpenStreetMap. Alternative basemaps: NLSC EMAP5, Google hybrid,
+  satellite, terrain and roadmap. Google road overlay is independent and survives basemap changes.
+- Drag to select the central crosshair. Buttons zoom by one level; wheel input uses
+  `clamp(-deltaY / 100, -1, 1)` around the current center. Pinch and double-click also
+  retain the center. View zoom is 0–20; native OSM/NLSC tiles stop at 19 and Google at 20.
+  Zoom buttons retain 50px minimum targets and 24px separation. Reduced motion disables zoom animation.
+- Provider attribution remains visible inside the map. Overlay failure warns without disabling
+  a successfully loaded basemap. Switching a basemap preserves the candidate and zoom.
+- Consent policy 3 discloses all providers; previous NLSC-only consent does not authorize them.
+  A live open-map permission is required for every external request, including after worker restart.
+  Exact tile hosts and paths are allowlisted. No tile is stored in CacheStorage or prefetched.
+  OSM uses its canonical tile host, normal HTTP caching and an origin-only Referer, following
+  https://operations.osmfoundation.org/policies/tiles/ . Other sources retain no-store/no-referrer.
+- Browser JPEG decoding already applies EXIF orientation. Preview and baked exports draw this
+  upright bitmap once. Metadata-preserving exports transform back to raw coordinates before
+  retaining EXIF, avoiding double rotation and dimension distortion. Original bytes remain unchanged.
+
+Verification uses mocked provider tiles, not live provider availability. Real EXIF 1–8 JPEG
+fixtures are checked in desktop and mobile Chromium. Physical iOS/Safari verification remains pending.
+
+### Verification for the amendment
+
+- 239 unit/component/integration tests passed (57 files).
+- 12 production browser journeys passed across desktop/mobile Chromium, including
+  overlay persistence, attribution, centered fractional/button zoom, live permission after
+  worker restart, revocation and absence of provider tiles from CacheStorage.
+- Two browser EXIF 1–8 regression journeys passed. Preview dimensions/colors and raw-preserving
+  export pixels are checked against real JPEG orientation tags.
+- Typecheck: zero errors/warnings. ESLint and production build passed; diff whitespace check passed.
+- Desktop/mobile mock-tile screenshots inspected. Mobile wheel uses a deterministic DOM event
+  because Chromium device emulation rescales native wheel input; desktop uses native wheel input.
+- Regression found and fixed: removing all Leaflet layer listeners before removing the layer
+  suppressed its internal cleanup hook, leaving stale zoom handlers. Removal now precedes listener cleanup.
+- Physical devices and actual provider availability were not verified in this change.
+
+## Template content editing (2026-09-05)
+
+Templates now optionally include explicit `defaultTexts` for all four corners. The template page
+reuses CornerTextEditor and WatermarkEditor to edit text, single/repeated text watermarks, and
+single PNG watermarks. Save creates a custom template; Update replaces the selected custom record
+without changing its ID or default selection. Built-ins remain copyable via Save.
+
+Applying a template with explicit defaults replaces the four corner texts and watermark settings,
+while retaining photo coordinates. Templates without explicit defaults preserve current text;
+new photos using those templates inherit global corner preferences. Explicit empty strings clear
+corners. Saving a template is persistent independently of canceling its application to the photo.
+PNG assets and templates use the existing atomic storage transaction.
+
+Regression coverage: a failing unit test first demonstrated missing persistence/application of
+corner defaults. All 240 unit/component/integration tests pass, along with 10 existing editor
+browser journeys and four new desktop/mobile journeys for create/update/default reload and PNG
+watermarks. Typecheck, lint and production build pass. Mobile template controls were visually
+inspected. A related import bug was fixed by snapshotting Svelte state before copying the selected
+custom default template; structuredClone cannot clone reactive proxies.
+
+## Figma template edit entry (2026-09-05)
+
+The selected template name now has a right-side Edit button. New and existing presets open
+TemplateEditor, matching Figma frame 121:288. Corner defaults, appearance, coordinate layout and
+watermark settings open focused subviews. Done retains the subview draft; Cancel/Back restores
+its checkpoint. Canceling the editor discards all unsaved edits. Saving persists the preset and
+returns to template selection; applying it to the current photo remains a separate action.
+
+Existing built-in IDs can have local saved overrides, so the displayed preset remains editable
+without duplicate list entries. New creates a fresh ID. The shared palette, stepper, corner text
+and watermark components are reused. The editor suppresses the photo preview so the settings
+remain near the top, consistent with the Figma design.
+
+Final verification: 18 production desktop/mobile browser journeys passed, including six template
+journeys for create/update/reload, nested cancellation and PNG persistence. EXIF 1–8 browser
+regressions were verified during the preceding orientation change. The complete unit suite was
+rerun after a transient pre-existing batch-export timer assertion failure; its focused rerun also
+passed. Screenshots of the selected template and editor were inspected.

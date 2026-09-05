@@ -1,13 +1,13 @@
 import type { MapNetworkConsent } from './types';
 
-export const MAP_CONSENT_POLICY_VERSION = 2;
+export const MAP_CONSENT_POLICY_VERSION = 3;
 export const MAP_CONSENT_STORAGE_KEY = 'photo-marker-v2:map-network-consent';
 
 function unknownConsent(): MapNetworkConsent {
   return {
     policyVersion: MAP_CONSENT_POLICY_VERSION,
     status: 'unknown',
-    providerId: 'nlsc-emap5',
+    providerId: 'pwa-map-sources',
     grantedAt: null,
     revokedAt: null,
   };
@@ -18,7 +18,7 @@ function isStoredConsent(value: unknown): value is MapNetworkConsent {
   const candidate = value as Partial<MapNetworkConsent>;
   return (
     candidate.policyVersion === MAP_CONSENT_POLICY_VERSION &&
-    candidate.providerId === 'nlsc-emap5' &&
+    candidate.providerId === 'pwa-map-sources' &&
     (candidate.status === 'unknown' ||
       candidate.status === 'granted' ||
       candidate.status === 'revoked') &&
@@ -51,7 +51,7 @@ export function grantMapConsent(storage: Storage, now = new Date()): MapNetworkC
   return persist(storage, {
     policyVersion: MAP_CONSENT_POLICY_VERSION,
     status: 'granted',
-    providerId: 'nlsc-emap5',
+    providerId: 'pwa-map-sources',
     grantedAt: now.toISOString(),
     revokedAt: null,
   });
@@ -61,7 +61,7 @@ export function revokeMapConsent(storage: Storage, now = new Date()): MapNetwork
   return persist(storage, {
     policyVersion: MAP_CONSENT_POLICY_VERSION,
     status: 'revoked',
-    providerId: 'nlsc-emap5',
+    providerId: 'pwa-map-sources',
     grantedAt: null,
     revokedAt: now.toISOString(),
   });

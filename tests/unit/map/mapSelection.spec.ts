@@ -28,8 +28,8 @@ describe('location candidates', () => {
       }).ok,
     ).toBe(true);
   });
-  it('allows only three exact tile paths with consent', () => {
-    for (const layer of ['EMAP5', 'PHOTO2', 'B5000']) {
+  it('allows only the exact NLSC tile path with consent', () => {
+    for (const layer of ['EMAP5']) {
       const url = `https://wmts.nlsc.gov.tw/wmts/${layer}/default/GoogleMapsCompatible/16/28000/54000`;
       expect(isRuntimeRequestAllowed(url, 'https://local.test', true)).toBe(true);
       expect(isRuntimeRequestAllowed(url, 'https://local.test', false)).toBe(false);

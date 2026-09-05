@@ -126,9 +126,11 @@ self.addEventListener('fetch', (event) => {
           (await liveMapPermission(event.clientId))
         ) {
           return fetch(request, {
-            cache: 'no-store',
+            cache: url.hostname === 'tile.openstreetmap.org' ? 'default' : 'no-store',
             credentials: 'omit',
-            referrerPolicy: 'no-referrer',
+            redirect: 'error',
+            referrerPolicy:
+              url.hostname === 'tile.openstreetmap.org' ? 'strict-origin' : 'no-referrer',
           });
         }
         return new Response('Network request is not authorized.', { status: 403 });

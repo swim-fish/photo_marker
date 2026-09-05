@@ -5,7 +5,7 @@
     value,
     onChange,
     onSaveDefaults,
-  }: { value: CornerTexts; onChange: (value: CornerTexts) => void; onSaveDefaults: () => void } =
+  }: { value: CornerTexts; onChange: (value: CornerTexts) => void; onSaveDefaults?: () => void } =
     $props();
   const corners: { id: OverlayCorner; label: string }[] = [
     { id: 'top-left', label: '左上' },
@@ -24,8 +24,8 @@
       ></textarea></label
     >{/each}
 </div>
-<button class="save" onclick={onSaveDefaults}>儲存為預設文字</button>
-<p>預設文字只套用到之後匯入的照片。</p>
+{#if onSaveDefaults}<button class="save" onclick={onSaveDefaults}>儲存為預設文字</button>
+  <p>預設文字只套用到之後匯入的照片。</p>{/if}
 
 <style>
   .corner-text {

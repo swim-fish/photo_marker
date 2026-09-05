@@ -5,11 +5,15 @@
   import MapLayerPicker from './MapLayerPicker.svelte';
   import {
     createEmap5Preview,
-    EMAP5_SERVICE_URL,
     type CreateEmap5Preview,
     type Emap5PreviewHandle,
   } from '../../infrastructure/map/emap5';
-  import type { MapLayerId } from '../../infrastructure/map/layers';
+  import {
+    DEFAULT_BASEMAP,
+    MAP_MAX_ZOOM,
+    mapSource,
+    type MapLayerId,
+  } from '../../infrastructure/map/layers';
   import type { Wgs84Coordinate } from '../../domain/coordinates/types';
   let {
     center,
@@ -34,7 +38,10 @@
     status = $state('載入地圖中…'),
     layersOpen = $state(false),
     zoom = $state(16);
-  let selected = $state<MapLayerId>('EMAP5');
+  let selected = $state<MapLayerId>(DEFAULT_BASEMAP);
+  let overlay = $state(false);
+  let overlayError = $state(false);
+  const source = $derived(mapSource(selected));
   let handle: Emap5PreviewHandle | null = null;
   let generation = 0;
   function destroy(): void {
@@ -54,6 +61,11 @@
     }
     const current = generation;
     candidate = initial;
+    selected = DEFAULT_BASEMAP;
+    overlay = false;
+    overlayError = false;
+    zoom = 16;
+    moving = false;
     status = '載入地圖中…';
     void setMapNetworkLease(true)
       .then((allowed) => {
@@ -72,6 +84,12 @@
           onZoomChanged: (value) => {
             if (current === generation) zoom = value;
           },
+          onOverlayError: () => {
+            if (current === generation) overlayError = true;
+          },
+          onOverlayLoad: () => {
+            if (current === generation) overlayError = false;
+          },
           onTileLoad: () => {
             if (current === generation) status = '線上地圖';
           },
@@ -84,6 +102,8 @@
         if (current !== generation) value.destroy();
         else {
           handle = value;
+          if (selected !== DEFAULT_BASEMAP) handle.setLayer?.(selected);
+          if (overlay) handle.setOverlay?.(true);
         }
       })
       .catch(() => {
@@ -116,16 +136,33 @@
     <div class="crosshair" aria-label="地圖中央準星">＋</div>
     <button class="layer-button" onclick={() => (layersOpen = !layersOpen)}>圖層</button
     >{#if layersOpen}<div class="layer-menu">
-        <MapLayerPicker {selected} onSelect={choose} />
+        <MapLayerPicker
+          {selected}
+          {overlay}
+          onSelect={choose}
+          onOverlayChange={(enabled) => {
+            overlay = enabled;
+            overlayError = false;
+            handle?.setOverlay?.(enabled);
+          }}
+        />
       </div>{/if}
+    <div class="attribution">
+      <a href={source.attributionUrl} target="_blank" rel="noreferrer">{source.attribution}</a
+      >{#if overlay && source.group !== 'google'}
+        · <a href={mapSource('google-road-overlay').attributionUrl} target="_blank" rel="noreferrer"
+          >© Google</a
+        >{/if}
+    </div>
   </div>
+  {#if overlayError}<p role="alert">路網疊圖無法載入；仍可使用底圖選取位置。</p>{/if}
   <div class="zoom">
     <button
       disabled={!online || zoom <= 0}
       aria-label="縮小地圖"
       onclick={() => handle?.zoomBy?.(-1)}>−</button
-    ><span>縮放 {zoom}</span><button
-      disabled={!online || zoom >= 18}
+    ><span>縮放 {Number(zoom.toFixed(2))}</span><button
+      disabled={!online || zoom >= MAP_MAX_ZOOM}
       aria-label="放大地圖"
       onclick={() => handle?.zoomBy?.(1)}>＋</button
     >
@@ -159,7 +196,6 @@
       onRevoke();
     }}>撤銷地圖同意</Button
   >
-  <a href={EMAP5_SERVICE_URL} target="_blank" rel="noreferrer">圖資來源：內政部國土測繪中心 NLSC</a>
 </section>
 
 <style>
@@ -181,6 +217,19 @@
     overflow: hidden;
     border-radius: 18px;
     background: var(--pm-color-pale);
+  }
+  .attribution {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    left: 0;
+    z-index: 800;
+    background: #fffffff0;
+    padding: 3px 8px;
+    font-size: 12px;
+  }
+  :global(.leaflet-zoom-anim .leaflet-zoom-animated) {
+    transition-duration: 0.2s;
   }
   .map-host {
     height: 100%;
@@ -206,6 +255,8 @@
   .layer-menu {
     position: absolute;
     top: 70px;
+    bottom: 36px;
+    overflow-y: auto;
     left: 12px;
     right: 12px;
     z-index: 900;

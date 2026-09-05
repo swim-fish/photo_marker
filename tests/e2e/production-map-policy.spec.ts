@@ -2,14 +2,19 @@ import { test, expect } from '@playwright/test';
 test('production worker denies closed-map tiles and rechecks live permission after restart', async ({
   page,
   context,
+  isMobile,
 }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
   test.skip(process.env.RUN_OFFLINE_E2E !== '1', 'Requires production preview.');
-  await context.route('https://wmts.nlsc.gov.tw/**', (route) =>
-    route.fulfill({
-      path: 'tests/integration/fixtures/sample.png',
-      contentType: 'image/png',
-      headers: { 'access-control-allow-origin': '*' },
-    }),
+  await context.route(
+    /^https:\/\/(wmts\.nlsc\.gov\.tw|tile\.openstreetmap\.org|mt1\.google\.com)\//,
+    (route) =>
+      route.fulfill({
+        path: 'tests/integration/fixtures/sample.png',
+        contentType: 'image/png',
+        headers: { 'access-control-allow-origin': '*' },
+      }),
   );
   await page.goto('/');
   await expect(page.getByText('已可離線使用', { exact: true })).toBeVisible();
@@ -33,13 +38,35 @@ test('production worker denies closed-map tiles and rechecks live permission aft
   await page.getByRole('button', { name: '向東', exact: true }).click();
   await expect(page.getByRole('button', { name: '使用準星位置' })).toBeEnabled();
   const center = await page.locator('.map-preview > p').last().textContent();
-  for (const layer of [/衛星／正射影像/, /地形圖/]) {
+  for (const layer of [/^Google 衛星$/, /臺灣通用電子地圖/]) {
     await page.getByRole('button', { name: '圖層', exact: true }).click();
     await page.getByRole('button', { name: layer }).click();
     await expect(page.getByText('線上地圖', { exact: true })).toBeVisible();
     await expect(page.locator('.map-preview > p').last()).toHaveText(center!);
     await expect(page.getByText('縮放 16')).toBeVisible();
   }
+  await page.getByRole('button', { name: '圖層', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Google 路網疊加層' }).check();
+  await page.getByRole('button', { name: 'OpenStreetMap', exact: true }).click();
+  await expect(page.getByText('線上地圖', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '圖層', exact: true }).click();
+  await expect(page.getByRole('checkbox')).toBeChecked();
+  await page.getByRole('button', { name: '圖層', exact: true }).click();
+  await expect(page.locator('.map-viewport a').filter({ hasText: 'OpenStreetMap' })).toBeVisible();
+  await expect(page.locator('.map-viewport a').filter({ hasText: 'Google' })).toBeVisible();
+  const viewport = page.locator('.map-host');
+  await viewport.hover({ position: { x: 20, y: 30 } });
+  if (isMobile)
+    await viewport.dispatchEvent('wheel', { deltaY: -50, bubbles: true, cancelable: true });
+  else await page.mouse.wheel(0, -50);
+  await expect(page.getByText('縮放 16.5', { exact: true })).toBeVisible();
+  await expect(page.locator('.map-preview > p').last()).toHaveText(center!);
+  await page.getByRole('button', { name: '放大地圖' }).click();
+  await expect(page.getByText('縮放 17.5', { exact: true })).toBeVisible();
+  await expect(page.locator('.map-preview > p').last()).toHaveText(center!);
+  await expect(page.getByRole('button', { name: '使用準星位置' })).toBeEnabled();
+  await page.screenshot({ path: `build/map-${test.info().project.name}.png`, fullPage: true });
+  expect(errors).toEqual([]);
   expect(await probe(2, 0, 1)).toBe(200);
   const cdp = await context.newCDPSession(page);
   await cdp.send('ServiceWorker.enable');
@@ -57,7 +84,7 @@ test('production worker denies closed-map tiles and rechecks live permission aft
         )
       )
         .flat()
-        .some((url) => url.includes('wmts.nlsc')),
+        .some((url) => /wmts\.nlsc|tile\.openstreetmap|mt1\.google/.test(url)),
     ),
   ).toBe(false);
 });

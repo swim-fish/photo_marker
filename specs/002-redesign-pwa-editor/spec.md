@@ -451,3 +451,24 @@ or persisted representations. This planning change does not delete existing appl
 - Implementation planning must define new-version persistence, atomic saves and map-service
   boundaries, and update the English ADR/UI guidance. The user explicitly waived backward
   compatibility on 2026-09-05; the new version starts with fresh local settings and consent.
+
+## 2026-09-05 follow-up amendment
+
+The user's subsequent pwa_map request supersedes the original three-NLSC-basemap contract:
+use OpenStreetMap by default, NLSC EMAP5 and four Google basemaps, with an independent Google
+road overlay and center-anchored zoom. Consent policy 3 covers these providers. See
+`docs/ui/redesigned-photo-editor.md` and ADR 0002 for the current behavior and validation.
+Real EXIF photo orientation must be applied exactly once in previews and exported copies;
+metadata-preserving output must retain the corresponding raw pixel orientation.
+
+## Template content follow-up (2026-09-05)
+
+The template editor must support saving and updating explicit four-corner default text and
+watermark settings. Applying explicit defaults replaces corner text while preserving the photo
+coordinate. New photos use the selected default template content. Text watermarks support single
+position or random repetition; PNG watermarks retain single-position behavior. This supersedes
+the previous exclusion of corner text from reusable templates.
+
+Template editing follows Figma frame 121:288: a right-side Edit button beside the selected
+preset opens an independent editor; corner defaults and watermarks are focused subviews with
+Done/Cancel checkpoints. Save returns to selection and Cancel discards unsaved preset changes.

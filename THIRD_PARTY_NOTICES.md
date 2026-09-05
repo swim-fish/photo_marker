@@ -100,3 +100,15 @@ The approved coordinate vectors in `tests/unit/fixtures/test-vectors.json` are c
 the reference document **Taiwan Coordinate Systems Reference v2.0.0 (MIT)** — Copyright (c) 2026
 TacMap TW contributors — MIT License. Their SHA-256 digest is pinned in
 `tests/unit/fixtures/vectors-digest.txt`.
+
+## pwa_map map catalogue and centered zoom adaptation
+
+The map catalogue and centered wheel/button interaction are adapted from
+https://github.com/swim-fish/pwa_map/tree/a8fb5b88de8f77f5cba517448d4911d3cccb2fc5
+(`src/map/sources.ts` and `src/map/MapController.ts`). The pwa_map MIT notice above
+also covers this adaptation. Copyright (c) 2026 Shihyu.
+
+Map imagery is fetched only while authorized and is not bundled. Visible attribution identifies
+OpenStreetMap contributors (https://www.openstreetmap.org/copyright), NLSC
+(https://maps.nlsc.gov.tw/S09SOA/) and Google
+(https://www.google.com/intl/zh-TW/help/terms_maps/) according to active sources.

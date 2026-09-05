@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import TemplateEditor from '../templates/TemplateEditor.svelte';
   import TemplatePicker from '../templates/TemplatePicker.svelte';
   import {
     builtinTemplates,
@@ -79,6 +80,8 @@
     coordinate: null,
   });
   let pending = $state<SettingsTransaction<EditSettings> | null>(null);
+  let templateEditor = $state<TemplateEditor>();
+  let creatingTemplate = $state(false);
   let view = $state<EditorView>('editor');
   let watermarkArrangement = $state<WatermarkArrangement | null>(null);
   let watermarkAssets = $state<WatermarkAsset[]>([]);
@@ -128,9 +131,13 @@
                   ? '文字樣式'
                   : view === 'watermark'
                     ? '浮水印'
-                    : view === 'templates'
-                      ? '選擇樣板'
-                      : '編輯照片',
+                    : view === 'templateEdit'
+                      ? creatingTemplate
+                        ? '自訂樣板'
+                        : '編輯樣板'
+                      : view === 'templates'
+                        ? '選擇樣板'
+                        : '編輯照片',
   );
 
   function updateAppearance(update: Partial<EditorAppearance>): void {
@@ -266,27 +273,44 @@
     }
     if (request === templateRequest && pending === transaction) pending.value = result;
   }
-  async function saveTemplate(name: string): Promise<void> {
-    if (!pending) return;
-    const transaction = pending;
-    const template = sanitizeTemplate({
-      ...$state.snapshot(pending.value.template),
-      id: crypto.randomUUID(),
-      name,
-    });
-    if (!template) {
-      error = '請檢查樣板名稱與設定。';
-      return;
-    }
-    const result = await preferences.saveTemplate(template, $state.snapshot(watermarkAssets));
-    if (!result.ok) {
-      error = '樣板儲存失敗，請重試。';
-      return;
-    }
-    templateItems = [...templateItems, template];
+  function editTemplate(creating: boolean): void {
+    creatingTemplate = creating;
+    view = 'templateEdit';
     error = '';
-    message = '已儲存樣板';
-    if (pending === transaction) pending.value.template = template;
+    message = '';
+  }
+  async function saveEditedTemplate(
+    value: AnnotationTemplate,
+    assets: readonly WatermarkAsset[],
+  ): Promise<boolean> {
+    if (!pending) return false;
+    const transaction = pending;
+    const builtin = builtinTemplates.some((t) => t.id === value.id);
+    const template = sanitizeTemplate({
+      ...value,
+      id: creatingTemplate ? crypto.randomUUID() : value.id,
+    });
+    if (!template) return false;
+    const result = await preferences.saveTemplate(
+      template,
+      $state.snapshot(
+        [...watermarkAssets, ...assets].filter((a) => a.id === template.watermark.assetId),
+      ),
+    );
+    if (!result.ok) return false;
+    templateItems = [...templateItems.filter((t) => t.id !== template.id), template];
+    watermarkAssets = [
+      ...watermarkAssets.filter((a) => !assets.some((b) => b.id === a.id)),
+      ...assets,
+    ];
+    if (pending === transaction) {
+      pending.value.template = template;
+      pending.value.texts = { ...template.defaultTexts! };
+      view = 'templates';
+      message = builtin && !creatingTemplate ? '已儲存樣板設定' : '已儲存樣板';
+      error = '';
+    }
+    return true;
   }
   async function setDefaultTemplate(id: string): Promise<void> {
     const result = await preferences.setDefaultTemplate(id);
@@ -473,7 +497,12 @@
       if (generation !== importGeneration) return;
       await saveTail;
       if (generation !== importGeneration) return;
-      templateItems = [...builtinTemplates, ...(templates.ok ? templates.value : [])];
+      templateItems = [
+        ...builtinTemplates.filter(
+          (t) => !templates.ok || !templates.value.some((saved) => saved.id === t.id),
+        ),
+        ...(templates.ok ? templates.value : []),
+      ];
       defaultTemplateId = defaults.ok ? (defaults.value.defaultTemplateId ?? 'outdoor') : 'outdoor';
       photo = result.value;
       session = editingSessionReducer(createEditingSession({ id, photoIds: [photo.id] }), {
@@ -503,8 +532,10 @@
           })
         : null;
       settings = {
-        template: structuredClone(template),
-        texts: defaults.ok ? defaults.value.cornerTexts : emptyCornerTexts(),
+        template: $state.snapshot(template),
+        texts: $state.snapshot(
+          template.defaultTexts ?? (defaults.ok ? defaults.value.cornerTexts : emptyCornerTexts()),
+        ),
         coordinate: coordinate?.ok ? coordinate.value : null,
       };
       watermarkAssets = [];
@@ -690,7 +721,11 @@
 <EditorShell
   {title}
   subtitle={photo ? `${photo.sourceName} · ${saved}` : '讓每張照片，都有位置。'}
-  onBack={photo && view !== 'editor' && !exporting ? cancelSettings : undefined}
+  onBack={photo && view !== 'editor' && !exporting
+    ? view === 'templateEdit'
+      ? () => templateEditor?.back()
+      : cancelSettings
+    : undefined}
 >
   <input
     class="file-input"
@@ -724,7 +759,7 @@
         <Button onclick={restoreDraft}>還原草稿</Button>
       </section>{/if}
   {:else}
-    {#if view !== 'map'}<div class="photo" aria-busy={previewBusy}>
+    {#if view !== 'map' && view !== 'templateEdit'}<div class="photo" aria-busy={previewBusy}>
         <img src={previewUrl || sourceUrl} alt="照片預覽" />
       </div>{/if}
     {#if view === 'editor'}
@@ -954,16 +989,28 @@
         selected={pending.value.template}
         defaultId={defaultTemplateId}
         onSelect={selectTemplate}
-        onSave={saveTemplate}
         onDefault={setDefaultTemplate}
-        onCustomize={() => (view = 'textStyle')}
+        onEdit={() => editTemplate(false)}
+        onNew={() => editTemplate(true)}
       />
       {#if message}<p role="status">{message}</p>{/if}
-      <Button variant="secondary" onclick={() => (view = 'watermark')}>設定浮水印</Button>
+
       <Button onclick={applySettings}>套用</Button><Button
         variant="secondary"
         onclick={cancelSettings}>取消</Button
       >
+    {:else if view === 'templateEdit' && pending}
+      <TemplateEditor
+        bind:this={templateEditor}
+        initial={pending.value.template}
+        texts={pending.value.texts}
+        creating={creatingTemplate}
+        onSave={saveEditedTemplate}
+        onCancel={() => {
+          view = 'templates';
+          error = '';
+        }}
+      />
     {:else if view === 'watermark' && pending}
       <WatermarkEditor
         value={pending.value.template.watermark}

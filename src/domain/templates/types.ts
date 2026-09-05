@@ -21,6 +21,7 @@ export type AnnotationTemplate = Readonly<{
   zone: 119 | 121;
   precision: number;
   watermark: WatermarkConfig;
+  defaultTexts?: CornerTexts;
 }>;
 export type EditorPreferences = Readonly<{
   version: 1;

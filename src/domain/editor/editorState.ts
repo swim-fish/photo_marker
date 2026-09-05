@@ -4,6 +4,7 @@ export type EditorView =
   | 'map'
   | 'cornerText'
   | 'templates'
+  | 'templateEdit'
   | 'textStyle'
   | 'watermark'
   | 'defaults'

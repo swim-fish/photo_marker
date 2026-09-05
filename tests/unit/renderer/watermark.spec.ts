@@ -84,4 +84,66 @@ describe('watermark compositing layer', () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it('uses the browser-decoded display bitmap once, then maps it back only for preserve-raw output', async () => {
+    const drawImage = vi.fn();
+    const setTransform = vi.fn();
+    const dimensions: Array<readonly [number, number]> = [];
+    const context = {
+      drawImage,
+      setTransform,
+      save: vi.fn(),
+      restore: vi.fn(),
+      globalAlpha: 1,
+    };
+    const bitmap = { width: 100, height: 160, close: vi.fn() };
+    vi.stubGlobal(
+      'createImageBitmap',
+      vi.fn(async () => bitmap),
+    );
+    vi.stubGlobal(
+      'OffscreenCanvas',
+      class {
+        constructor(width: number, height: number) {
+          dimensions.push([width, height]);
+        }
+        getContext() {
+          return context;
+        }
+        convertToBlob() {
+          return Promise.resolve(new Blob(['p'], { type: 'image/png' }));
+        }
+      },
+    );
+    try {
+      const baked = createRenderPlan({
+        rawWidth: 160,
+        rawHeight: 100,
+        orientation: 6,
+        outputFormat: 'image/png',
+        metadataMode: 'removeSupported',
+        overlays: [],
+      });
+      await renderCanvasBlob(new Blob(['source']), baked, 'image/png');
+      expect(dimensions[0]).toEqual([100, 160]);
+      expect(drawImage).toHaveBeenLastCalledWith(bitmap, 0, 0, 100, 160);
+      expect(setTransform).not.toHaveBeenCalled();
+
+      const preserved = createRenderPlan({
+        rawWidth: 160,
+        rawHeight: 100,
+        orientation: 6,
+        sourceFormat: 'image/jpeg',
+        outputFormat: 'image/jpeg',
+        metadataMode: 'preserveSupported',
+        overlays: [],
+      });
+      await renderCanvasBlob(new Blob(['source']), preserved, 'image/jpeg');
+      expect(dimensions[1]).toEqual([160, 100]);
+      expect(setTransform).toHaveBeenCalledOnce();
+      expect(drawImage).toHaveBeenLastCalledWith(bitmap, 0, 0, 100, 160);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

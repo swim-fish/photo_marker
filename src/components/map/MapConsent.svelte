@@ -15,8 +15,11 @@
     class="consent"
   >
     <h2>使用線上地圖</h2>
-    <p>圖資由內政部國土測繪中心（NLSC）提供，包含標準地圖、正射影像與地形圖。</p>
-    <p>載入圖資會將 IP 位址與瀏覽區域傳送給圖資服務。照片、文字與草稿不會上傳。</p>
+    <p>圖資包含 OpenStreetMap、內政部國土測繪中心（NLSC）與 Google 底圖／路網疊圖。</p>
+    <p>
+      載入所選圖資會將 IP 位址與瀏覽區域傳送給對應服務；OpenStreetMap
+      也會收到本站來源網址。照片、文字與草稿不會上傳。
+    </p>
     <p>你可以隨時撤銷同意，也可以離線手動輸入座標。</p>
     <Button onclick={onAccept}>同意並開啟地圖</Button><Button
       variant="secondary"

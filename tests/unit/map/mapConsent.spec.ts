@@ -27,7 +27,7 @@ describe('versioned map network consent', () => {
     const storage = memoryStorage();
     expect(readMapConsent(storage)).toMatchObject({
       policyVersion: MAP_CONSENT_POLICY_VERSION,
-      providerId: 'nlsc-emap5',
+      providerId: 'pwa-map-sources',
       status: 'unknown',
     });
 
@@ -45,7 +45,7 @@ describe('versioned map network consent', () => {
       MAP_CONSENT_STORAGE_KEY,
       JSON.stringify({
         policyVersion: MAP_CONSENT_POLICY_VERSION - 1,
-        providerId: 'nlsc-emap5',
+        providerId: 'pwa-map-sources',
         status: 'granted',
         grantedAt: '2026-08-17T00:00:00.000Z',
         revokedAt: null,

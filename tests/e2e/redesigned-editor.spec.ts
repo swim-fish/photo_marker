@@ -37,12 +37,14 @@ test('manual zero coordinate, current-location confirmation and map consent', as
   page,
   context,
 }) => {
-  await page.route('https://wmts.nlsc.gov.tw/**', (route) =>
-    route.fulfill({
-      path: 'tests/integration/fixtures/sample.png',
-      contentType: 'image/png',
-      headers: { 'access-control-allow-origin': '*' },
-    }),
+  await page.route(
+    /^https:\/\/(wmts\.nlsc\.gov\.tw|tile\.openstreetmap\.org|mt1\.google\.com)\//,
+    (route) =>
+      route.fulfill({
+        path: 'tests/integration/fixtures/sample.png',
+        contentType: 'image/png',
+        headers: { 'access-control-allow-origin': '*' },
+      }),
   );
   await context.grantPermissions(['geolocation']);
   await context.setGeolocation({ latitude: 25.033, longitude: 121.5654, accuracy: 10 });
@@ -63,7 +65,7 @@ test('manual zero coordinate, current-location confirmation and map consent', as
   await expect(page.getByRole('dialog', { name: '地圖連線說明' })).toBeVisible();
   await page.getByRole('button', { name: '同意並開啟地圖' }).click();
   await page.getByRole('button', { name: '圖層', exact: true }).click();
-  await page.getByRole('button', { name: /衛星／正射影像/ }).click();
+  await page.getByRole('button', { name: /^Google 衛星$/ }).click();
   await page.getByRole('button', { name: '取消選取' }).click();
   await page.getByRole('button', { name: '取消', exact: true }).click();
   await expect(page.getByText('0.000000, 0.000000', { exact: true })).toBeVisible();
@@ -88,6 +90,7 @@ test('corner defaults, RGBA, stable watermark and template isolation survive reo
   await page.getByRole('button', { name: '隨機重複', exact: true }).click();
   await page.getByRole('button', { name: '套用', exact: true }).click();
   await page.getByRole('button', { name: '樣板', exact: true }).click();
+  await page.getByRole('button', { name: '＋ 自訂樣板' }).click();
   await page.getByLabel('樣板名稱').fill('工程巡查');
   await page.getByRole('button', { name: '儲存目前設定為樣板' }).click();
   await page.getByRole('button', { name: '設為預設：工程巡查' }).click();
@@ -218,6 +221,7 @@ test('template quota failure preserves the active editor and retry works', async
   await page.goto('/');
   await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/sample.png');
   await page.getByRole('button', { name: '樣板', exact: true }).click();
+  await page.getByRole('button', { name: '＋ 自訂樣板' }).click();
   await page.getByLabel('樣板名稱').fill('可重試樣板');
   await page.evaluate(() => {
     const original = IDBObjectStore.prototype.put;

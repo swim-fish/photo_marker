@@ -8,7 +8,6 @@ import {
   displayPointToRawPoint,
   layoutOverlayRect,
   mapDisplayRectToRaw,
-  rawPointToDisplayPoint,
   type PixelRect,
 } from './layout';
 
@@ -318,7 +317,11 @@ export async function renderCanvasBlob(
 ): Promise<Blob | null> {
   if (typeof createImageBitmap !== 'function') return null;
   if (plan.overlays.length || plan.watermark?.config.enabled) await ensureEditorFont();
-  const bitmap = await createImageBitmap(source, { imageOrientation: 'none' });
+  // Chromium applies JPEG EXIF orientation while decoding a Blob even when callers request
+  // `imageOrientation: 'none'`. Treat this bitmap as display-oriented in every path so a
+  // portrait JPEG is never rotated a second time. The preserve-raw path below explicitly maps
+  // that display raster back to raw pixels before its EXIF orientation is retained.
+  const bitmap = await createImageBitmap(source);
   try {
     const preserveRaw = plan.orientationMode === 'preserveRaw';
     const canvas = createCanvas(
@@ -330,7 +333,6 @@ export async function renderCanvasBlob(
     if (!context) return null;
 
     if (preserveRaw) {
-      context.drawImage(bitmap, 0, 0, plan.outputWidth, plan.outputHeight);
       const transform = affineFromNormalized(
         (point) => displayPointToRawPoint(point, plan.sourceOrientation),
         plan.displayWidth,
@@ -339,22 +341,14 @@ export async function renderCanvasBlob(
         plan.outputHeight,
       );
       context.setTransform(...transform);
+      context.drawImage(bitmap, 0, 0, plan.displayWidth, plan.displayHeight);
       await paintWatermark(context, plan);
       paintOverlays(context, plan.overlays, {
         width: plan.displayWidth,
         height: plan.displayHeight,
       });
     } else {
-      const transform = affineFromNormalized(
-        (point) => rawPointToDisplayPoint(point, plan.sourceOrientation),
-        bitmap.width,
-        bitmap.height,
-        plan.displayWidth,
-        plan.displayHeight,
-      );
-      context.setTransform(...transform);
-      context.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height);
-      context.resetTransform();
+      context.drawImage(bitmap, 0, 0, plan.displayWidth, plan.displayHeight);
       await paintWatermark(context, plan);
       paintOverlays(context, plan.overlays, {
         width: plan.displayWidth,

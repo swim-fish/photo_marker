@@ -55,7 +55,7 @@ describe('contained EMAP5 preview', () => {
     expect(passedCenter).toEqual(center);
     expect(passedCenter).not.toBe(center);
     expect(screen.getByText('線上地圖')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /圖資來源：內政部國土測繪中心/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /OpenStreetMap contributors/ })).toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole('button', { name: '取消選取' }));
     expect(destroy).toHaveBeenCalledOnce();
@@ -84,4 +84,24 @@ describe('contained EMAP5 preview', () => {
     expect(destroy).toHaveBeenCalledOnce();
     expect(onRevoke).toHaveBeenCalledOnce();
   });
+});
+
+it('replays layer choices made while the map is still initializing', async () => {
+  let resolve!: (handle: Emap5PreviewHandle) => void;
+  const createPreview = vi.fn<CreateEmap5Preview>(
+    () =>
+      new Promise((value) => {
+        resolve = value;
+      }),
+  );
+  const setLayer = vi.fn(),
+    setOverlay = vi.fn();
+  render(MapPreview, { center, consented: true, createPreview });
+  await waitFor(() => expect(createPreview).toHaveBeenCalledOnce());
+  await fireEvent.click(screen.getByRole('button', { name: '圖層' }));
+  await fireEvent.click(screen.getByRole('checkbox'));
+  await fireEvent.click(screen.getByRole('button', { name: 'Google 衛星' }));
+  resolve({ destroy: vi.fn(), setLayer, setOverlay });
+  await waitFor(() => expect(setLayer).toHaveBeenCalledWith('google-satellite'));
+  expect(setOverlay).toHaveBeenCalledWith(true);
 });

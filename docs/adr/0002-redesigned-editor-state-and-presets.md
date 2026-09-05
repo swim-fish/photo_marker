@@ -65,3 +65,31 @@ and matrix-bound checks. A worker restart therefore cannot lose a durable author
 closing the map synchronously changes the page response to denied. There is no tile cache, global
 permission flag, or long-lived stored network lease. Production tests restart the worker and verify
 closed/open/restarted/revoked request outcomes.
+
+## Amendment: pwa_map sources and browser EXIF decoding (2026-09-05)
+
+The user requested the current pwa_map map catalogue and zoom interaction. Replace the former
+three-NLSC-source restriction with six basemaps and one independent Google road overlay as
+specified in `docs/ui/redesigned-photo-editor.md`. Retain Leaflet; reproducing the centered
+interaction does not require a second map engine. Consent policy 3 and exact CSP/tile allowlists
+cover the expanded providers. Only OpenStreetMap uses normal browser HTTP caching and an
+origin-only Referer; tile CacheStorage remains prohibited.
+
+Real JPEG fixtures showed Chromium applies EXIF orientation even with imageOrientation:none.
+The renderer now explicitly consumes browser-oriented decoding, draws preview/baked output
+once, and inversely maps metadata-preserving output to raw pixels. This supersedes any assumption
+that createImageBitmap yields raw JPEG pixels. Source bytes and metadata export contracts are retained.
+
+## Amendment: reusable template content (2026-09-05)
+
+Following the user request, template presets may explicitly contain four corner default strings
+in `defaultTexts`, alongside the existing watermark configuration. This supersedes the earlier
+blanket exclusion of corner content from templates. The sanitizer copies only these four fields;
+photo identifiers and coordinates remain excluded. Explicit defaults replace corner text when
+applied and take precedence over global defaults on import. Absence means inherit/preserve text.
+Custom updates retain the existing template ID and atomic asset storage contract.
+
+The Figma follow-up moves template editing into its own transaction and nested checkpoint views.
+The right-side Edit action opens the selected preset. Local saved overrides of built-in IDs take
+precedence during list loading; new presets receive fresh IDs. Canceling editing leaves the
+preset and photo unchanged, while successful Save returns to template selection before Apply.

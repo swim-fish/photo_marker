@@ -53,6 +53,15 @@ export function sanitizeTemplate(input: unknown): AnnotationTemplate | null {
     (w.assetId !== undefined && typeof w.assetId !== 'string')
   )
     return null;
+  if (
+    t.defaultTexts !== undefined &&
+    (!t.defaultTexts ||
+      typeof t.defaultTexts !== 'object' ||
+      corners.some(
+        (corner) => typeof t.defaultTexts![corner as keyof typeof t.defaultTexts] !== 'string',
+      ))
+  )
+    return null;
   const color = (value: typeof a.textColor) => ({
     red: value.red,
     green: value.green,
@@ -63,6 +72,16 @@ export function sanitizeTemplate(input: unknown): AnnotationTemplate | null {
     id: t.id,
     version: 1,
     name: t.name.trim(),
+    ...(t.defaultTexts
+      ? {
+          defaultTexts: {
+            'top-left': t.defaultTexts['top-left'],
+            'top-right': t.defaultTexts['top-right'],
+            'bottom-left': t.defaultTexts['bottom-left'],
+            'bottom-right': t.defaultTexts['bottom-right'],
+          },
+        }
+      : {}),
     coordinateFormat: t.coordinateFormat,
     coordinateCorner: t.coordinateCorner,
     zone: t.zone,
@@ -91,7 +110,13 @@ export function applyTemplate<T extends { template: AnnotationTemplate }>(
   current: T,
 ): T | null {
   const clean = sanitizeTemplate(template);
-  return clean ? { ...current, template: clean } : null;
+  return clean
+    ? {
+        ...current,
+        template: clean,
+        ...(clean.defaultTexts ? { texts: { ...clean.defaultTexts } } : {}),
+      }
+    : null;
 }
 export const builtinTemplates: readonly AnnotationTemplate[] = [
   defaultTemplate,

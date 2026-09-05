@@ -7,21 +7,26 @@
     selected,
     defaultId,
     onSelect,
-    onSave,
     onDefault,
-    onCustomize,
+    onEdit,
+    onNew,
   }: {
     templates: readonly AnnotationTemplate[];
     selected: AnnotationTemplate;
     defaultId?: string;
     onSelect: (value: AnnotationTemplate) => void;
-    onSave: (name: string) => Promise<void>;
     onDefault: (id: string) => Promise<void>;
-    onCustomize: () => void;
+    onEdit: () => void;
+    onNew: () => void;
   } = $props();
-  let name = $state(''),
-    busy = $state(false);
+  let busy = $state(false);
 </script>
+
+<div class="selected-template">
+  <strong>{selected.name}</strong><Button variant="secondary" onclick={onEdit} label="編輯目前樣板"
+    >編輯</Button
+  >
+</div>
 
 <section aria-label="樣板清單">
   {#each templates as template (template.id)}
@@ -68,24 +73,20 @@
     </div>
   {/each}
 </section>
-<Button variant="secondary" onclick={onCustomize}>自訂文字樣式與底色</Button>
-<label>樣板名稱<input bind:value={name} maxlength="80" placeholder="例如：工程巡查" /></label>
-<Button
-  disabled={busy || !name.trim()}
-  onclick={async () => {
-    busy = true;
-    try {
-      await onSave(name.trim());
-    } finally {
-      busy = false;
-    }
-  }}>儲存目前設定為樣板</Button
->
-<p>
-  樣板包含文字樣式、座標格式及浮水印；照片的四角文字與位置會保留。設定預設樣板僅影響之後匯入的照片。
-</p>
+<Button variant="secondary" onclick={onNew}>＋ 自訂樣板</Button>
+<p>套用樣板預設文字與浮水印，保留照片座標。</p>
 
 <style>
+  .selected-template {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  .selected-template strong {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
   .thumbnail {
     position: relative;
     height: 104px;
@@ -149,16 +150,5 @@
   small {
     font-size: 12px;
     color: var(--pm-color-muted);
-  }
-  label {
-    display: grid;
-    gap: 8px;
-  }
-  input {
-    min-height: 48px;
-    padding: 10px;
-    width: 100%;
-    border: 1px solid var(--pm-color-border);
-    border-radius: 12px;
   }
 </style>

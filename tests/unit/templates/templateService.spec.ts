@@ -41,3 +41,27 @@ describe('template data isolation', () => {
     expect(current.template.name).toBe('戶外紀錄');
   });
 });
+
+it('stores explicit template corner defaults and applies them without copying photo coordinates', () => {
+  const defaults = {
+    'top-left': 'Site A',
+    'top-right': 'Inspector',
+    'bottom-left': '',
+    'bottom-right': 'Record',
+  };
+  const template = { ...defaultTemplate, defaultTexts: defaults };
+  const clean = sanitizeTemplate(template);
+  expect(clean).toMatchObject({ defaultTexts: defaults });
+  const current = {
+    template: defaultTemplate,
+    texts: { ...defaults, 'top-left': 'Photo text' },
+    coordinate: { latitude: 25, longitude: 121 },
+  };
+  const result = applyTemplate(template, current);
+  expect(result?.texts).toEqual(defaults);
+  expect(result?.coordinate).toEqual(current.coordinate);
+  expect(current.texts['top-left']).toBe('Photo text');
+  expect(
+    sanitizeTemplate({ ...template, defaultTexts: { ...defaults, 'top-left': 123 } }),
+  ).toBeNull();
+});

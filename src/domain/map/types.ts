@@ -1,6 +1,6 @@
 import type { Wgs84Coordinate } from '../coordinates/types';
 
-export type MapProviderId = 'nlsc-emap5';
+export type MapProviderId = 'pwa-map-sources';
 export type MapNetworkConsentStatus = 'unknown' | 'granted' | 'revoked';
 
 export type MapNetworkConsent = Readonly<{
