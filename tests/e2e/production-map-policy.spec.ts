@@ -30,7 +30,7 @@ test('production worker denies closed-map tiles and rechecks live permission aft
     return (await response).status();
   };
   expect(await probe(2, 0, 0)).toBe(403);
-  await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/sample.png');
+  await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/editor-photo.png');
   await page.getByRole('button', { name: '座標', exact: true }).click();
   await page.getByRole('button', { name: '在地圖上選取' }).click();
   await page.getByRole('button', { name: '同意並開啟地圖' }).click();

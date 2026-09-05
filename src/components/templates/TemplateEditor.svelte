@@ -8,18 +8,33 @@
   import WatermarkEditor from '../watermarks/WatermarkEditor.svelte';
   import RgbaPicker from '../ui/RgbaPicker.svelte';
   import NumberStepper from '../ui/NumberStepper.svelte';
+  import CoordinateOptions from '../coordinates/CoordinateOptions.svelte';
   import Button from '../ui/Button.svelte';
+  import SettingRow from '../ui/SettingRow.svelte';
+  import type { SourcePhoto } from '../../domain/photos/types';
   let {
+    photo,
+    storedAssets = [],
+    isDefault = false,
+    onHeading,
     initial,
     texts,
     creating = false,
     onSave,
     onCancel,
   }: {
+    photo?: SourcePhoto;
+    storedAssets?: readonly WatermarkAsset[];
+    isDefault?: boolean;
+    onHeading?: (title: string, subtitle: string) => void;
     initial: AnnotationTemplate;
     texts: CornerTexts;
     creating?: boolean;
-    onSave: (value: AnnotationTemplate, assets: readonly WatermarkAsset[]) => Promise<boolean>;
+    onSave: (
+      value: AnnotationTemplate,
+      assets: readonly WatermarkAsset[],
+      makeDefault: boolean,
+    ) => Promise<boolean>;
     onCancel: () => void;
   } = $props();
   let value = $state(
@@ -29,6 +44,7 @@
       defaultTexts: $state.snapshot(creating ? texts : (initial.defaultTexts ?? texts)),
     })),
   );
+  let makeDefault = $state(untrack(() => !creating && isDefault));
   type Panel = 'main' | 'texts' | 'watermark' | 'appearance' | 'coordinate';
   let panel = $state<Panel>('main'),
     busy = $state(false),
@@ -36,8 +52,31 @@
     error = $state(''),
     valid = $state(true);
   let checkpoint: typeof value | null = null;
-  let assets: WatermarkAsset[] = [],
-    generation = 0;
+  let assets = $state<WatermarkAsset[]>([]);
+  let generation = 0;
+  const cornerLabels = {
+    'top-left': '左上角',
+    'top-right': '右上角',
+    'bottom-left': '左下角',
+    'bottom-right': '右下角',
+  };
+  $effect(() => {
+    const titles = {
+      main: creating ? '自訂樣板' : '編輯樣板',
+      texts: '四角預設文字',
+      watermark: '樣板浮水印',
+      appearance: '文字框樣式',
+      coordinate: '座標格式與位置',
+    };
+    const captions = {
+      main: '四角文字與浮水印',
+      texts: '設定此樣板的文字',
+      watermark: '單一位置或隨機重複',
+      appearance: '文字樣式與 RGBA 底色',
+      coordinate: '設定格式與顯示角落',
+    };
+    onHeading?.(titles[panel], `${value.name || '新樣板'} · ${captions[panel]}`);
+  });
   onDestroy(() => {
     generation++;
   });
@@ -94,6 +133,7 @@
         !(await onSave(
           clean,
           assets.filter((a) => a.id === clean.watermark.assetId),
+          makeDefault,
         ))
       )
         error = '樣板儲存失敗，請重試。';
@@ -103,53 +143,69 @@
   }
 </script>
 
-<section aria-label="樣板編輯" aria-busy={busy || importing}>
+<section class:texts={panel === 'texts'} aria-label="樣板編輯" aria-busy={busy || importing}>
   {#if error}<p role="alert">{error}</p>{/if}
   {#if panel === 'main'}
-    <label
-      >樣板名稱<input bind:value={value.name} maxlength="80" placeholder="例如：工程巡查" /></label
-    >
-    <button class="row" onclick={() => open('texts')}
-      ><small>四角預設文字</small><span
-        >{value.defaultTexts['top-left'] || '四個角落分別設定'} ›</span
-      ></button
-    >
-    <button class="row" onclick={() => open('appearance')}
-      ><small>文字框</small><span>文字樣式與 RGBA 底色 ›</span></button
-    >
-    <button class="row" onclick={() => open('coordinate')}
-      ><small>座標格式與位置</small><span
-        >{value.coordinateFormat.replace('_DD', '').replace('_TM2', '')} ›</span
-      ></button
-    >
-    <button class="row" onclick={() => open('watermark')}
-      ><small>浮水印</small><span
-        >{value.watermark.enabled
-          ? value.watermark.kind === 'image'
-            ? 'PNG 圖片'
-            : value.watermark.text || '已開啟'
-          : '未啟用'} ›</span
-      ></button
-    >
-    <p>儲存四角預設文字與浮水印，照片座標不變。</p>
-    <Button disabled={busy || !value.name.trim()} onclick={save}
-      >{creating ? '儲存目前設定為樣板' : '儲存變更'}</Button
-    >
-    <Button variant="secondary" disabled={busy} onclick={back}>取消</Button>
+    <div class="settings">
+      <label class="pm-field"
+        ><span>樣板名稱</span><input
+          bind:value={value.name}
+          maxlength="80"
+          placeholder="例如：工程巡查"
+        /></label
+      >
+      <SettingRow
+        label="四角預設文字"
+        detail={value.defaultTexts['top-left']
+          ? `左上：${value.defaultTexts['top-left']}`
+          : '四個角落分別設定'}
+        onclick={() => open('texts')}
+      />
+      <SettingRow label="文字框" detail="文字樣式與 RGBA 底色" onclick={() => open('appearance')} />
+      <SettingRow
+        label="座標格式與位置"
+        detail={`${value.coordinateFormat.replace('_DD', '').replace('_TM2', '')} · ${cornerLabels[value.coordinateCorner]}`}
+        onclick={() => open('coordinate')}
+      />
+      <SettingRow
+        label="浮水印"
+        detail={value.watermark.enabled
+          ? `已開啟 · ${value.watermark.kind === 'image' ? 'PNG 圖片' : value.watermark.text || '尚未填寫文字'}`
+          : '未啟用'}
+        onclick={() => open('watermark')}
+      />
+    </div>
+    <div class="actions main-actions">
+      <label class="default-choice"
+        ><input
+          type="checkbox"
+          bind:checked={makeDefault}
+          disabled={!creating && isDefault}
+        />設為下次匯入的預設樣板</label
+      >
+      <p>儲存四角預設文字與浮水印，照片座標不變。</p>
+      <Button disabled={busy || !value.name.trim()} onclick={save}
+        >{creating ? '儲存目前設定為樣板' : '儲存變更'}</Button
+      >
+      <Button variant="secondary" disabled={busy} onclick={back}>取消</Button>
+    </div>
   {:else}
-    {#if panel === 'texts'}<h2>四角預設文字</h2>
+    {#if panel === 'texts'}
       <CornerTextEditor
         value={value.defaultTexts}
         onChange={(texts) => (value = { ...value, defaultTexts: texts })}
       />
       <p>套用此樣板時帶入以上文字；留白可清空該角落。</p>
-    {:else if panel === 'watermark'}<h2>樣板浮水印</h2>
+    {:else if panel === 'watermark'}
       <WatermarkEditor
+        compact
+        {photo}
+        assets={[...storedAssets, ...assets]}
         value={value.watermark}
         onChange={(watermark) => (value = { ...value, watermark })}
         onImage={image}
       />
-    {:else if panel === 'appearance'}<h2>文字框樣式</h2>
+    {:else if panel === 'appearance'}
       <NumberStepper
         label="文字大小"
         value={Math.round(value.appearance.fontSize * 390)}
@@ -208,9 +264,9 @@
           (value = { ...value, appearance: { ...value.appearance, backgroundColor: color } })}
         onValidityChange={(v) => (valid = v)}
       />
-    {:else}<h2>座標格式與位置</h2>
+    {:else}
       <label
-        >座標格式<select bind:value={value.coordinateFormat}
+        >座標格式<select aria-label="座標格式" bind:value={value.coordinateFormat}
           ><option value="WGS84_DD">WGS84</option><option value="TWD97_TM2">TWD97</option><option
             value="MGRS">MGRS</option
           ></select
@@ -228,61 +284,88 @@
             ><option value={121}>121°</option><option value={119}>119°</option></select
           ></label
         >{/if}
-      {#if value.coordinateFormat === 'MGRS'}<NumberStepper
-          label="座標精度"
-          value={value.precision}
-          min={0}
-          max={5}
-          onChange={(n) => (value = { ...value, precision: n })}
-        />{/if}
+      <CoordinateOptions
+        {value}
+        onChange={(template) => (value = { ...template, defaultTexts: value.defaultTexts })}
+      />
     {/if}
     {#if importing}<p role="status">讀取 PNG 中…</p>{/if}
-    <Button disabled={!valid || importing} onclick={done}>完成，返回樣板</Button><Button
-      variant="secondary"
-      onclick={back}>取消</Button
-    >
+    <div class="actions" class:watermark-actions={panel === 'watermark'}>
+      <Button disabled={!valid || importing} onclick={done}>完成，返回樣板</Button><Button
+        variant="secondary"
+        onclick={back}>取消</Button
+      >
+    </div>
   {/if}
 </section>
 
 <style>
   section {
-    display: grid;
-    gap: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 661px;
   }
-  label {
+  .settings {
+    display: grid;
+    gap: 10px;
+  }
+  .texts {
+    min-height: 677px;
+    padding-top: 16px;
+  }
+  .actions {
+    display: grid;
+    gap: 12px;
+    margin-top: auto;
+    padding-top: 24px;
+  }
+  .default-choice {
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+    color: var(--pm-color-accent);
+    font-size: 14px;
+    font-weight: 500;
+    min-height: 32px;
+  }
+  .default-choice input {
+    width: 18px !important;
+    min-height: 18px !important;
+    height: 18px;
+    accent-color: var(--pm-color-accent);
+  }
+  .main-actions {
+    padding-top: 32px;
+  }
+  .watermark-actions {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    padding-top: 24px;
+  }
+  .watermark-actions :global(button) {
+    padding-inline: 8px;
+    font-size: 14px;
+  }
+  label:not(.pm-field) {
     display: grid;
     gap: 8px;
   }
-  h2 {
-    font-size: 20px;
-    margin: 0;
-  }
-  input,
+  label:not(.pm-field) input,
   select {
     width: 100%;
+    min-width: 0;
     min-height: 50px;
     padding: 12px;
-    border: 1px solid var(--pm-color-border);
+    border: 0;
     border-radius: 14px;
     background: white;
     color: var(--pm-color-ink);
   }
-  .row {
-    display: grid;
-    gap: 8px;
-    text-align: left;
-    padding: 16px;
-    min-height: 78px;
-    border: 1px solid var(--pm-color-border);
-    border-radius: var(--pm-radius-control);
-    background: white;
-    color: var(--pm-color-ink);
-  }
-  small,
   p {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
     color: var(--pm-color-muted);
-  }
-  span {
     overflow-wrap: anywhere;
   }
 </style>

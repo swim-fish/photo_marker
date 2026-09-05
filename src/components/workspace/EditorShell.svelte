@@ -28,17 +28,20 @@
     color: var(--pm-color-ink);
   }
   .editor-shell {
-    width: min(100%, 920px);
+    width: min(100%, 390px);
     margin: 0 auto;
     min-height: 100dvh;
-    padding: 24px;
+    padding: 48px 24px 24px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 12px;
   }
   header {
+    position: relative;
     display: grid;
-    gap: 10px;
+    gap: 12px;
+    margin-bottom: 5px;
+    padding-bottom: 0;
   }
   h1 {
     font-size: 22px;
@@ -47,26 +50,30 @@
   p {
     margin: 0;
     font-size: 12px;
+    line-height: 18px;
     color: var(--pm-color-muted);
     overflow-wrap: anywhere;
   }
   .back {
-    justify-self: start;
+    position: absolute;
+    right: -8px;
+    top: -44px;
     min-height: 44px;
     min-width: 64px;
     border: 0;
-    background: var(--pm-color-pale);
+    background: transparent;
     color: var(--pm-color-ink);
     border-radius: 14px;
+    font-size: 12px;
   }
   @media (max-width: 600px) {
     .editor-shell {
-      max-width: 438px;
+      max-width: 390px;
     }
   }
   @media (max-width: 350px) {
     .editor-shell {
-      padding: 16px;
+      padding: 48px 16px 24px;
     }
   }
 </style>

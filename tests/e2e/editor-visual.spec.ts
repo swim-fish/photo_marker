@@ -12,6 +12,12 @@ test('captures the delivered phone states and selected coordinate formats', asyn
       await page
         .getByRole('img', { name: '照片預覽' })
         .evaluate((img: HTMLImageElement) => img.decode());
+    if (await page.locator('.preview').count()) {
+      await expect(page.locator('.preview')).toHaveAttribute('aria-busy', 'false');
+      await page
+        .getByRole('img', { name: '樣板浮水印預覽' })
+        .evaluate((img: HTMLImageElement) => img.decode());
+    }
     await page.screenshot({ path: testInfo.outputPath(`${name}.png`), fullPage: true });
   };
   await capture('01-import');
@@ -52,12 +58,15 @@ test('captures the delivered phone states and selected coordinate formats', asyn
   await page.getByRole('button', { name: '套用', exact: true }).click();
   await page.getByRole('button', { name: '樣板', exact: true }).click();
   await capture('07-templates');
-  await page.getByRole('button', { name: '設定浮水印' }).click();
+  await page.getByRole('button', { name: '編輯目前樣板' }).click();
+  await page.getByRole('button', { name: /^浮水印/ }).click();
   await page.getByLabel('啟用浮水印').check();
   await page.getByLabel('浮水印文字', { exact: true }).fill('FIELD');
   await capture('08-single-watermark');
   await page.getByRole('button', { name: '隨機重複', exact: true }).click();
   await capture('09-repeat-watermark');
+  await page.getByRole('button', { name: '完成，返回樣板' }).click();
+  await page.getByRole('button', { name: '儲存變更' }).click();
   await page.getByRole('button', { name: '套用', exact: true }).click();
   await expect(page.getByText(/已自動儲存草稿/)).toBeVisible();
   await capture('10-editor');

@@ -65,3 +65,10 @@ it('stores explicit template corner defaults and applies them without copying ph
     sanitizeTemplate({ ...template, defaultTexts: { ...defaults, 'top-left': 123 } }),
   ).toBeNull();
 });
+
+it('persists the wrapping preference and rejects unsupported values', () => {
+  expect(sanitizeTemplate({ ...defaultTemplate, coordinateWrap: 'nowrap' })).toMatchObject({
+    coordinateWrap: 'nowrap',
+  });
+  expect(sanitizeTemplate({ ...defaultTemplate, coordinateWrap: 'arbitrary' })).toBeNull();
+});

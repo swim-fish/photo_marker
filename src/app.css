@@ -48,3 +48,60 @@ h1 {
   margin: 0;
   font-weight: 700;
 }
+
+/* Shared Figma field and setting-card primitives. Values wrap instead of truncating. */
+.pm-setting,
+.pm-field {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 78px;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: var(--pm-radius-control);
+  background: white;
+  color: var(--pm-color-ink);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.pm-setting small,
+.pm-field > span {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--pm-color-muted);
+  line-height: 18px;
+}
+.pm-field input,
+.pm-field textarea,
+.pm-field select {
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.pm-field textarea {
+  resize: vertical;
+  field-sizing: content;
+}
+@font-face {
+  font-family: 'Noto Sans TC';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/noto-sans-tc-chinese-traditional-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Noto Sans TC';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/noto-sans-tc-chinese-traditional-700-normal.woff2') format('woff2');
+}

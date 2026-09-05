@@ -21,6 +21,7 @@ export function sanitizeTemplate(input: unknown): AnnotationTemplate | null {
   if (
     !['WGS84_DD', 'TWD97_TM2', 'MGRS'].includes(t.coordinateFormat) ||
     !corners.includes(t.coordinateCorner) ||
+    (t.coordinateWrap !== undefined && !['auto', 'nowrap'].includes(t.coordinateWrap)) ||
     ![119, 121].includes(t.zone) ||
     !Number.isInteger(t.precision) ||
     t.precision < 0 ||
@@ -84,6 +85,7 @@ export function sanitizeTemplate(input: unknown): AnnotationTemplate | null {
       : {}),
     coordinateFormat: t.coordinateFormat,
     coordinateCorner: t.coordinateCorner,
+    coordinateWrap: t.coordinateWrap ?? 'auto',
     zone: t.zone,
     precision: t.precision,
     appearance: {

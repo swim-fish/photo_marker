@@ -286,14 +286,24 @@ export class DraftRepository {
     try {
       const database = await this.database();
       const transaction = database.transaction(['sessions', 'revisions', 'photos'], 'readwrite');
-      const revisionStore = transaction.objectStore('revisions');
-      const photoStore = transaction.objectStore('photos');
-      const revisions = await revisionStore.index('by-session').getAllKeys(sessionId);
-      const photos = await photoStore.index('by-session').getAllKeys(sessionId);
-      for (const key of revisions) await revisionStore.delete(key);
-      for (const key of photos) await photoStore.delete(key);
-      await transaction.objectStore('sessions').delete(sessionId);
-      await transaction.done;
+      try {
+        const revisionStore = transaction.objectStore('revisions');
+        const photoStore = transaction.objectStore('photos');
+        const revisions = await revisionStore.index('by-session').getAllKeys(sessionId);
+        const photos = await photoStore.index('by-session').getAllKeys(sessionId);
+        for (const key of revisions) await revisionStore.delete(key);
+        for (const key of photos) await photoStore.delete(key);
+        await transaction.objectStore('sessions').delete(sessionId);
+        await transaction.done;
+      } catch (error) {
+        try {
+          transaction.abort();
+        } catch {
+          /* Already aborted by IndexedDB. */
+        }
+        await transaction.done.catch(() => undefined);
+        throw error;
+      }
       return success(undefined);
     } catch (error) {
       return failureResult(

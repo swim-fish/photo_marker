@@ -61,3 +61,20 @@ Template/default updates are atomic. Validate the entire template and assets bef
 resolve coordinate content from the active photo and preserve current corner text. Applying a template
 creates one revision or leaves the prior revision unchanged. Export/discard clears only the relevant
 session data, never preferences/templates/assets. Defer asset garbage collection in this feature.
+
+
+## Coordinate presentation amendment (2026-09-05)
+
+`AnnotationTemplate.coordinateWrap` is `auto | nowrap`; missing values normalize to
+`auto`. Sanitization rejects other values. Drafts and saved templates retain this
+presentation preference; canonical WGS84 coordinates and MGRS precision are unchanged.
+MGRS always renders as a single line regardless of the stored preference, which remains
+available when switching back to WGS84 or TWD97.
+
+Automatic wrapping only splits WGS84 latitude/longitude or TWD97 easting/northing at
+component boundaries. Numbers, zone suffixes, and MGRS strings are never split mid-value.
+Coordinate-only font reduction and geometry are derived, not written back to the shared
+text appearance. A single-line coordinate may use up to 94% of the image width, while
+freeform text retains the 44% limit. Placement checks every existing text box, including
+opposite corners, with the normal safety gap. An impossible layout is rejected. Restoring
+and exporting rebuild layout from canonical settings instead of trusting cached rectangles.

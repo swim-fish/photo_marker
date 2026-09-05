@@ -172,3 +172,138 @@ journeys for create/update/reload, nested cancellation and PNG persistence. EXIF
 regressions were verified during the preceding orientation change. The complete unit suite was
 rerun after a transient pre-existing batch-export timer assertion failure; its focused rerun also
 passed. Screenshots of the selected template and editor were inspected.
+
+
+## Figma visual alignment and draft disposal (2026-09-05)
+
+Authoritative design: Photo Marker, file `NCRix4fCkTgdk8538hrjJV`, frames `4:3`, `4:4`,
+`4:8`, `121:288`, `121:317`, `121:339`, and `131:333`. The implementation uses Svelte
+components and the existing palette instead of copying the generated React reference.
+
+- The shared shell uses a 390px maximum width, 24px gutters (16px at 320px), 22px title,
+  and 12px subtitle. The first content starts at 128px for a single-line subtitle. A real
+  Back control occupies the top navigation area; the fictional phone clock is omitted.
+- Template selection uses three horizontal thumbnail cards, a right-side Edit action,
+  and Apply / Create / Set default actions in that order. Extra saved presets scroll
+  horizontally. Thumbnail photographs come from the selected photo.
+- `SettingRow`, `.pm-field`, `.pm-setting`, `CornerPlacement`, and Button share the design
+  palette and spacing. Setting cards have 78px minimum height, white backgrounds and
+  14px radii. Template corner fields are a single vertical column. Long values wrap or
+  grow; controls retain keyboard focus indicators.
+- Template watermark editing uses a 180px preview, single/repeat segments, a text card,
+  PNG file action, and a collapsible position/density/opacity card. The preview renders
+  the real photo and watermark through the existing worker and deterministic layout.
+  Text and PNG remain supported; PNG replaces the text field until text mode is chosen.
+- The coordinate screen provides three format buttons, complete formatted output, and
+  four corner controls over a photo. Position source controls expand on request and
+  start expanded for a photo without GPS. TWD97 exposes the zone; MGRS exposes precision.
+  Coordinates never use ellipsis or a fixed-height clipping container. A narrow screen
+  wraps the complete value and grows vertically. Export layout retains every character
+  and rejects content that cannot fit instead of cropping it.
+- Preview frames use `object-fit: contain` for rendered annotations. This intentionally
+  differs from the design's cropped sample photo so coordinates and corner text stay
+  visible with portrait, panoramic, or differently proportioned photos. Placement-only
+  backgrounds and thumbnails can crop. The offline status footer and extra source/
+  cancellation controls remain real application controls beyond the static mockup.
+- Noto Sans TC 500 and 700 are now self-hosted alongside 400. The production precache
+  grows from approximately 1.58 MiB to 3.52 MiB; all weights remain available offline.
+
+The template editor can save a preset as the next-import default. Template, referenced
+PNG assets, and default selection commit in one IndexedDB transaction. A failed save
+rolls back all three. An already-default template displays a checked, disabled selection;
+choose another preset to change that default. Canceling the photo application does not
+undo a separately saved template.
+
+### Discard draft
+
+The active editor and the welcome-page recovery card expose Discard draft. A modal
+confirmation describes the local editing data being removed, initially focuses the
+non-destructive action, and blocks duplicate confirmation while deleting. Cancel/Escape
+retains the draft. Confirm drains queued autosaves before deleting that session's
+revisions and photo records in one transaction. Failure aborts the transaction, retains
+in-memory work, and permits retry. Success releases object URLs, resets the file input,
+returns to import, and discovers any other remaining draft. The same source photo can
+be selected again. Original files, exports, global defaults, saved templates, and shared
+watermark assets are retained.
+
+### Verification
+
+- Red-first tests covered missing discard entry points, atomic default selection, and
+  a mid-discard synchronous failure that previously left partial deletion behind.
+- 244 unit/component/integration tests passed across 58 files.
+- 34 distinct production desktop/mobile Chromium journeys passed across focused runs:
+  template creation/edit/default/reload, nested cancellation, PNG assets, quota failure,
+  discard/cancel/recovery/failure, 320px/390px coordinate layouts, rendered page states,
+  export, map permission, and offline recovery/export. Platform-mismatched duplicate
+  offline tests are intentionally skipped.
+- Figma-reference-photo screenshots of template selection/editor/corners, single/repeated
+  watermarks and coordinate settings were inspected at 390px, plus 320px coordinate
+  screenshots. Native rendering evidence is in ignored `build/figma-aligned-*.png`; the
+  reference image is an inspection fixture, not a bundled application asset.
+- Visual changes were checked with real screenshots and existing workflow tests rather
+  than synthetic CSS-only unit failures. Behavior tests were updated where the design
+  intentionally moved Cancel to Back or PNG selection to its direct file action.
+- Five repeated-watermark preview updates on the reference photo took 158–167ms on the
+  local Chromium host. This is a focused desktop
+  measurement, not a physical-phone performance claim; no long performance suite was
+  rerun because the export renderer and layout algorithms are unchanged.
+- Typecheck, ESLint, changed-file formatting, production build and diff whitespace checks
+  passed. Physical iOS/Safari checks remain pending; Chromium device emulation is not
+  a substitute for those checks.
+
+ADR impact: none. This change reuses the existing worker, deterministic rendering,
+IndexedDB stores and transaction strategy; it adds no schema, dependency or migration.
+
+
+## Coordinate wrapping and precision labels (2026-09-05)
+
+The coordinate page and template coordinate subview share `CoordinateOptions`. Users
+choose Allow wrapping or Force single line. Auto wrapping breaks only between complete
+latitude/longitude values for WGS84 and X/easting / Y/northing values for TWD97. MGRS is
+always single line and disables the wrapping selector without erasing the preference
+for other formats. `CoordinateReadout` uses the same semantic boundaries in the editor
+summary; a long atomic value shrinks to fit rather than overflowing or splitting digits.
+
+Photo layout can widen a single-line coordinate up to the safe image width and reduce
+its font size when needed. It searches inward from the selected corner while checking
+all four freeform text boxes; occupied opposite corners cannot obscure a wide coordinate.
+Coordinates and other text keep a safety gap. If no valid layout exists, application or
+export reports an error. Restored and exported layouts are rebuilt from current canonical
+settings so stale cached geometry cannot override the new policy.
+
+MGRS precision labels show digits per axis and cell width by height:
+
+| Digits per axis | Cell dimensions |
+| --- | --- |
+| 0 | 100,000 × 100,000 m |
+| 1 | 10,000 × 10,000 m |
+| 2 | 1,000 × 1,000 m |
+| 3 | 100 × 100 m |
+| 4 | 10 × 10 m |
+| 5 | 1 × 1 m |
+
+These are grid dimensions, not administrative boundaries or claimed GPS accuracy.
+Reference: [NGA MGRS coordinate systems](https://earth-info.nga.mil/?action=coordsys&dir=coordsys).
+The stored numeric precision and conversion algorithm remain unchanged.
+
+Verification adds red-first layout and template-sanitization regressions, browser checks
+for wrap controls, narrow readouts, all precision labels, persistence and nested cancel,
+and visual inspection of real photo annotations with all four corners populated. Browser
+photo-editing fixtures now use a deterministic 1200×900 PNG instead of the 4×3 PNG codec
+fixture: a four-pixel image cannot contain readable full coordinates. The tiny fixture
+remains in codec/watermark tests, and an impossible-coordinate-layout rejection is tested.
+A re-import race exposed by the larger fixture was fixed by disabling editor tools until
+intake completes. Source bytes are still immutable.
+
+ADR impact: none. This extends presentation settings and the existing placement search;
+no new storage schema, conversion library, rendering backend or migration is introduced.
+
+
+Final checks for the coordinate amendment: 250 unit/component/integration tests passed,
+plus 26 distinct desktop/mobile Chromium journeys across the coordinate, editor, template
+and offline suites. Platform-mismatched offline duplicates were skipped intentionally.
+Typecheck reported zero errors/warnings; ESLint, formatting and production build passed.
+Screenshots and persisted geometry were inspected with every corner populated for WGS84
+and TWD97 auto/single-line modes and MGRS. No coordinate box intersected another text box.
+Physical iOS/Safari validation remains pending. UI documentation and data-model notes are
+updated; no long performance characterization was necessary for this bounded layout change.

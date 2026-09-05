@@ -34,8 +34,9 @@ export function findCornerPlacement(
   candidate: OverlayGeometry,
   existing: readonly OverlayGeometry[],
   corner: OverlayCorner,
+  maxWidth = MAX_ANCHORED_OVERLAY_WIDTH,
 ): OverlayGeometry | null {
-  const width = Math.min(MAX_ANCHORED_OVERLAY_WIDTH, Math.max(0.01, candidate.width));
+  const width = Math.min(1 - OVERLAY_SAFE_INSET * 2, maxWidth, Math.max(0.01, candidate.width));
   const height = Math.min(1 - OVERLAY_SAFE_INSET * 2, Math.max(0.01, candidate.height));
   const x = corner.endsWith('left') ? OVERLAY_SAFE_INSET : 1 - OVERLAY_SAFE_INSET - width;
   const minimumY = OVERLAY_SAFE_INSET;

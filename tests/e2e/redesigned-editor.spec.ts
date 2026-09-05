@@ -49,18 +49,24 @@ test('manual zero coordinate, current-location confirmation and map consent', as
   await context.grantPermissions(['geolocation']);
   await context.setGeolocation({ latitude: 25.033, longitude: 121.5654, accuracy: 10 });
   await page.goto('/');
-  await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/sample.png');
+  await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/editor-photo.png');
   await page.getByRole('button', { name: '座標', exact: true }).click();
+  if (!(await page.getByLabel('緯度', { exact: true }).isVisible()))
+    await page.getByRole('button', { name: /^位置來源：/ }).click();
   await page.getByLabel('緯度', { exact: true }).fill('0');
   await page.getByLabel('經度', { exact: true }).fill('0');
   await page.getByRole('button', { name: '使用輸入的座標' }).click();
   await expect(page.getByText('0.000000, 0.000000', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '座標', exact: true }).click();
+  if (!(await page.getByLabel('緯度', { exact: true }).isVisible()))
+    await page.getByRole('button', { name: /^位置來源：/ }).click();
   await page.getByRole('button', { name: '使用目前位置' }).click();
   await expect(page.getByRole('heading', { name: '確認目前位置' })).toBeVisible();
   await page.getByRole('button', { name: '取消', exact: true }).click();
   await expect(page.getByText('0.000000, 0.000000', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '座標', exact: true }).click();
+  if (!(await page.getByLabel('緯度', { exact: true }).isVisible()))
+    await page.getByRole('button', { name: /^位置來源：/ }).click();
   await page.getByRole('button', { name: '在地圖上選取' }).click();
   await expect(page.getByRole('dialog', { name: '地圖連線說明' })).toBeVisible();
   await page.getByRole('button', { name: '同意並開啟地圖' }).click();
@@ -75,7 +81,7 @@ test('corner defaults, RGBA, stable watermark and template isolation survive reo
   page,
 }) => {
   await page.goto('/');
-  await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/sample.png');
+  await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/editor-photo.png');
   await page.getByRole('button', { name: '四角文字', exact: true }).click();
   await page.getByLabel('左上文字', { exact: true }).fill('現場 A\n晴天');
   await page.getByRole('button', { name: '儲存為預設文字' }).click();
@@ -109,7 +115,7 @@ test('corner defaults, RGBA, stable watermark and template isolation survive reo
     mimeType: 'image/png',
     buffer: await (
       await import('node:fs/promises')
-    ).readFile('tests/integration/fixtures/sample.png'),
+    ).readFile('tests/integration/fixtures/editor-photo.png'),
   });
   await expect(page.getByText('目前樣板：工程巡查')).toBeVisible();
   await page.getByRole('button', { name: '四角文字', exact: true }).click();
@@ -219,7 +225,7 @@ test('PNG watermark and RGBA export use canonical pixels and retained assets', a
 
 test('template quota failure preserves the active editor and retry works', async ({ page }) => {
   await page.goto('/');
-  await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/sample.png');
+  await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/editor-photo.png');
   await page.getByRole('button', { name: '樣板', exact: true }).click();
   await page.getByRole('button', { name: '＋ 自訂樣板' }).click();
   await page.getByLabel('樣板名稱').fill('可重試樣板');
@@ -238,6 +244,6 @@ test('template quota failure preserves the active editor and retry works', async
   await expect(page.getByRole('button', { name: '設為預設：可重試樣板' })).toHaveCount(0);
   await page.getByRole('button', { name: '儲存目前設定為樣板' }).click();
   await expect(page.getByRole('button', { name: '設為預設：可重試樣板' })).toBeVisible();
-  await page.getByRole('button', { name: '取消', exact: true }).click();
+  await page.getByRole('button', { name: '返回', exact: true }).click();
   await expect(page.getByText('目前樣板：戶外紀錄')).toBeVisible();
 });

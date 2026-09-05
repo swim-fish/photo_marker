@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import DiscardDraftDialog from './DiscardDraftDialog.svelte';
   import TemplateEditor from '../templates/TemplateEditor.svelte';
   import TemplatePicker from '../templates/TemplatePicker.svelte';
   import {
@@ -10,6 +11,9 @@
   import { ensureEditorFont } from '../../renderer/font';
   import EditorShell from './EditorShell.svelte';
   import Button from '../ui/Button.svelte';
+  import CoordinateOptions from '../coordinates/CoordinateOptions.svelte';
+  import CoordinateReadout from '../coordinates/CoordinateReadout.svelte';
+  import CornerPlacement from '../ui/CornerPlacement.svelte';
   import NumberStepper from '../ui/NumberStepper.svelte';
   import WatermarkEditor from '../watermarks/WatermarkEditor.svelte';
   import { arrangeWatermark, resolveWatermarkArrangement } from '../../domain/watermarks/layout';
@@ -82,6 +86,11 @@
   let pending = $state<SettingsTransaction<EditSettings> | null>(null);
   let templateEditor = $state<TemplateEditor>();
   let creatingTemplate = $state(false);
+  let templateHeading = $state('編輯樣板'),
+    templateSubtitle = $state('');
+  let discardOpen = $state(false),
+    discarding = $state(false),
+    discardError = $state('');
   let view = $state<EditorView>('editor');
   let watermarkArrangement = $state<WatermarkArrangement | null>(null);
   let watermarkAssets = $state<WatermarkAsset[]>([]);
@@ -102,6 +111,7 @@
     consentOpen = $state(false),
     online = $state(true),
     locating = $state(false);
+  let sourceControlsOpen = $state(false);
   let latitude = $state(''),
     longitude = $state('');
   let locationCandidate = $state<CoordinateRecord | null>(null);
@@ -132,9 +142,7 @@
                   : view === 'watermark'
                     ? '浮水印'
                     : view === 'templateEdit'
-                      ? creatingTemplate
-                        ? '自訂樣板'
-                        : '編輯樣板'
+                      ? templateHeading
                       : view === 'templates'
                         ? '選擇樣板'
                         : '編輯照片',
@@ -156,13 +164,13 @@
           ? '地圖選取'
           : '手動輸入';
   }
-  function coordinateSummary(): string {
-    if (!settings.coordinate) return '可補上位置，或直接加上文字。';
-    if (settings.template.coordinateFormat === 'WGS84_DD')
-      return `${settings.coordinate.latitude.toFixed(6)}, ${settings.coordinate.longitude.toFixed(6)}`;
-    const formatted = formatCoordinate(settings.coordinate, settings.template.coordinateFormat, {
-      zone: settings.template.zone,
-      precision: settings.template.precision,
+  function coordinateSummary(value = settings): string {
+    if (!value.coordinate) return '可補上位置，或直接加上文字。';
+    if (value.template.coordinateFormat === 'WGS84_DD')
+      return `${value.coordinate.latitude.toFixed(6)}, ${value.coordinate.longitude.toFixed(6)}`;
+    const formatted = formatCoordinate(value.coordinate, value.template.coordinateFormat, {
+      zone: value.template.zone,
+      precision: value.template.precision,
     });
     return formatted.ok ? formatted.value.text : '此格式無法表示目前位置';
   }
@@ -275,6 +283,7 @@
   }
   function editTemplate(creating: boolean): void {
     creatingTemplate = creating;
+    templateHeading = creating ? '自訂樣板' : '編輯樣板';
     view = 'templateEdit';
     error = '';
     message = '';
@@ -282,6 +291,7 @@
   async function saveEditedTemplate(
     value: AnnotationTemplate,
     assets: readonly WatermarkAsset[],
+    makeDefault: boolean,
   ): Promise<boolean> {
     if (!pending) return false;
     const transaction = pending;
@@ -296,8 +306,10 @@
       $state.snapshot(
         [...watermarkAssets, ...assets].filter((a) => a.id === template.watermark.assetId),
       ),
+      makeDefault,
     );
     if (!result.ok) return false;
+    if (makeDefault) defaultTemplateId = template.id;
     templateItems = [...templateItems.filter((t) => t.id !== template.id), template];
     watermarkAssets = [
       ...watermarkAssets.filter((a) => !assets.some((b) => b.id === a.id)),
@@ -351,10 +363,56 @@
         saved = '草稿未儲存';
       });
   }
+  async function discardDraft(): Promise<void> {
+    const id = session?.id ?? recovery?.session.id;
+    if (!id || discarding) return;
+    discarding = true;
+    discardError = '';
+    importGeneration++;
+    locationRequest++;
+    templateRequest++;
+    loading = false;
+    try {
+      // Drain queued autosaves before deleting, so they cannot recreate the discarded draft.
+      await saveTail;
+      const result = await drafts.discard(id);
+      if (!result.ok) {
+        discardError = '草稿未能刪除，編輯內容仍保留。請重試。';
+        return;
+      }
+      renderGeneration++;
+      if (previewUrl && previewUrl !== sourceUrl) URL.revokeObjectURL(previewUrl);
+      if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+      photo = null;
+      session = null;
+      pending = null;
+      config = null;
+      overlays = [];
+      watermarkAssets = [];
+      watermarkArrangement = null;
+      previewUrl = '';
+      sourceUrl = '';
+      previewBusy = false;
+      view = 'editor';
+      saved = '';
+      error = '';
+      message = '';
+      recovery = null;
+      if (selectedFiles) selectedFiles.value = '';
+      const remaining = await drafts.restoreLatest();
+      recovery = remaining.ok ? remaining.value : null;
+      discardOpen = false;
+    } catch {
+      discardError = '草稿未能刪除，請重試。';
+    } finally {
+      discarding = false;
+    }
+  }
   function openSettings(next: EditorView): void {
-    if (!photo || !session) return;
+    if (!photo || !session || loading) return;
     pending = beginSettings(photo.id, session.revision, $state.snapshot(settings));
     view = next;
+    sourceControlsOpen = !settings.coordinate;
     colorValid = true;
     error = '';
     message = '';
@@ -605,7 +663,9 @@
     watermarkArrangement = draft.watermarkArrangements?.[0] ?? null;
     watermarkArrangement = watermarkLayer(settings)?.arrangement ?? null;
     config = draft.exportConfigurations?.[0] ?? defaultConfiguration(photo);
-    overlays = [...(draft.overlays ?? [])];
+    const restoredOverlays = buildOverlays(settings);
+    overlays = restoredOverlays ?? [];
+    if (!restoredOverlays) error = '草稿文字或座標無法完整排入照片，請調整文字大小或內容。';
     pending = null;
     if (previewUrl && previewUrl !== sourceUrl) URL.revokeObjectURL(previewUrl);
     if (sourceUrl) URL.revokeObjectURL(sourceUrl);
@@ -617,6 +677,12 @@
   }
   async function confirmExport(method: 'download' | 'share'): Promise<void> {
     if (!photo || !config || exporting) return;
+    const currentOverlays = buildOverlays(settings);
+    if (!currentOverlays) {
+      error = '文字或座標無法完整排入照片，請返回調整文字大小或內容後再匯出。';
+      return;
+    }
+    overlays = currentOverlays;
     exporting = true;
     error = '';
     await saveTail;
@@ -720,7 +786,15 @@
 <svelte:window ononline={() => (online = true)} onoffline={() => (online = false)} />
 <EditorShell
   {title}
-  subtitle={photo ? `${photo.sourceName} · ${saved}` : '讓每張照片，都有位置。'}
+  subtitle={view === 'templates'
+    ? '一鍵套用，立即預覽'
+    : view === 'templateEdit'
+      ? templateSubtitle
+      : view === 'coordinate'
+        ? '顯示格式與照片上的放置位置'
+        : photo
+          ? `${photo.sourceName} · ${saved}`
+          : '讓每張照片，都有位置。'}
   onBack={photo && view !== 'editor' && !exporting
     ? view === 'templateEdit'
       ? () => templateEditor?.back()
@@ -756,27 +830,46 @@
     {#if recovery}<section class="panel">
         <h2>繼續上次的記錄</h2>
         <p>{recovery.photos[0]?.sourceName}</p>
-        <Button onclick={restoreDraft}>還原草稿</Button>
+        <Button disabled={loading} onclick={restoreDraft}>還原草稿</Button>
+        <button
+          class="discard"
+          disabled={loading}
+          onclick={() => {
+            discardError = '';
+            discardOpen = true;
+          }}>捨棄草稿</button
+        >
       </section>{/if}
   {:else}
-    {#if view !== 'map' && view !== 'templateEdit'}<div class="photo" aria-busy={previewBusy}>
+    {#if view !== 'map' && view !== 'templateEdit' && view !== 'coordinate'}<div
+        class="photo"
+        class:template-preview={view === 'templates'}
+        class:editor-preview={view === 'editor'}
+        aria-busy={previewBusy}
+      >
         <img src={previewUrl || sourceUrl} alt="照片預覽" />
       </div>{/if}
     {#if view === 'editor'}
-      <section class="panel">
+      <section class="panel coordinate-summary">
         <strong>{settings.coordinate ? '已取得照片位置' : '這張照片沒有 GPS'}</strong>
-        <p>
-          {coordinateSummary()}
-        </p>
+        <CoordinateReadout
+          text={coordinateSummary()}
+          format={settings.template.coordinateFormat}
+          wrap={settings.template.coordinateWrap}
+          label="照片座標"
+        />
         <small
           >{settings.coordinate ? `來源：${sourceLabel(settings.coordinate)}` : '未設定座標'}</small
         >
       </section>
       <div class="tools">
-        <Button variant="secondary" onclick={() => openSettings('coordinate')}>座標</Button><Button
-          variant="secondary"
-          onclick={() => openSettings('cornerText')}>四角文字</Button
-        ><Button variant="secondary" onclick={() => openSettings('templates')}>樣板</Button>
+        <Button variant="secondary" disabled={loading} onclick={() => openSettings('coordinate')}
+          >座標</Button
+        ><Button variant="secondary" disabled={loading} onclick={() => openSettings('cornerText')}
+          >四角文字</Button
+        ><Button variant="secondary" disabled={loading} onclick={() => openSettings('templates')}
+          >樣板</Button
+        >
       </div>
       <div class="bottom">
         <p class="muted">目前樣板：{settings.template.name}</p>
@@ -787,10 +880,18 @@
             view = 'exportReview';
           }}>儲存照片</Button
         ><Button variant="secondary" onclick={() => selectedFiles?.click()}>選取另一張照片</Button>
+        <button
+          class="discard"
+          disabled={loading}
+          onclick={() => {
+            discardError = '';
+            discardOpen = true;
+          }}>捨棄草稿</button
+        >
       </div>
     {:else if view === 'coordinate' && pending}
-      <section class="panel">
-        <h2>座標格式</h2>
+      <section class="coordinate-settings">
+        <h2>顯示格式</h2>
         <div class="tools">
           {#each [{ id: 'WGS84_DD', label: 'WGS84' }, { id: 'TWD97_TM2', label: 'TWD97' }, { id: 'MGRS', label: 'MGRS' }] as format (format.id)}<button
               class="choice"
@@ -804,89 +905,110 @@
               }}>{format.label}</button
             >{/each}
         </div>
-        {#if pending.value.template.coordinateFormat === 'TWD97_TM2'}<label
-            >分帶<select bind:value={pending.value.template.zone}
+        <div class="coordinate-value">
+          <CoordinateReadout
+            text={coordinateSummary(pending.value)}
+            format={pending.value.template.coordinateFormat}
+            wrap={pending.value.template.coordinateWrap}
+            label="座標格式預覽"
+          />
+        </div>
+        <p class="muted">切換格式不會改變實際位置。</p>
+        {#if pending.value.template.coordinateFormat === 'TWD97_TM2'}
+          <label class="pm-field"
+            ><span>分帶</span><select bind:value={pending.value.template.zone}
               ><option value={121}>121°（臺灣本島）</option><option value={119}>119°（澎湖）</option
               ></select
             ></label
-          >{/if}
-        <label
-          >精度<select bind:value={pending.value.template.precision}
-            >{#each [0, 1, 2, 3, 4, 5] as precision (precision)}<option value={precision}
-                >{precision}</option
-              >{/each}</select
-          ></label
-        >
-        <label
-          >座標位置<select bind:value={pending.value.template.coordinateCorner}
-            ><option value="top-left">左上</option><option value="top-right">右上</option><option
-              value="bottom-left">左下</option
-            ><option value="bottom-right">右下</option></select
-          ></label
-        >
-      </section>
-      <MapConsent
-        open={consentOpen}
-        onAccept={() => {
-          mapConsented = grantMapConsent(localStorage).status === 'granted';
-          consentOpen = false;
-          view = 'map';
-        }}
-        onDecline={() => (consentOpen = false)}
-      />
-      <div class="tools">
-        <Button variant="secondary" onclick={requestMap}>在地圖上選取</Button><Button
-          variant="secondary"
-          disabled={locating}
-          onclick={locate}>{locating ? '定位中…' : '使用目前位置'}</Button
-        >
-      </div>
-      {#if locationCandidate}<section class="panel">
-          <h2>確認目前位置</h2>
-          <p>{locationCandidate.latitude.toFixed(6)}, {locationCandidate.longitude.toFixed(6)}</p>
-          <p>
-            精確度：{locationCandidate.accuracyMeters === null
-              ? '無法取得'
-              : `約 ${locationCandidate.accuracyMeters} 公尺`}
-          </p>
-          <p>目前位置可能不是照片拍攝地點。</p>
-          <Button
-            onclick={() => {
-              if (pending && locationCandidate) {
-                pending.value.coordinate = locationCandidate;
-                locationCandidate = null;
-                applySettings();
-              }
-            }}>確認使用目前位置</Button
           >
-        </section>{/if}
-      <section class="panel">
-        <h2>手動輸入</h2>
-        <label>緯度<input type="text" inputmode="decimal" bind:value={latitude} /></label><label
-          >經度<input type="text" inputmode="decimal" bind:value={longitude} /></label
-        ><Button
-          onclick={() => {
-            if (!latitude.trim() || !longitude.trim()) {
-              error = '請填寫緯度與經度。';
-              return;
-            }
-            chooseCoordinate(Number(latitude), Number(longitude), 'MANUAL_INPUT');
-          }}>使用輸入的座標</Button
-        >
+        {/if}
+        <CoordinateOptions
+          value={pending.value.template}
+          onChange={(template) => {
+            if (pending) pending.value.template = template;
+          }}
+        />
       </section>
-      <Button
-        variant="secondary"
-        onclick={() => {
-          if (pending) {
-            pending.value.coordinate = null;
-            applySettings();
-          }
-        }}>不顯示座標</Button
-      >
-      <Button onclick={applySettings}>套用</Button><Button
-        variant="secondary"
-        onclick={cancelSettings}>取消</Button
-      >
+      <section class="coordinate-placement">
+        <h2>座標放在哪裡？</h2>
+        <CornerPlacement
+          photoUrl={sourceUrl}
+          value={pending.value.template.coordinateCorner}
+          onChange={(corner) => {
+            if (pending)
+              pending.value.template = { ...pending.value.template, coordinateCorner: corner };
+          }}
+        />
+        <p class="muted">同一角有文字時，座標會排列在文字下方。</p>
+      </section>
+      <div class="coordinate-actions">
+        <Button variant="secondary" onclick={() => (sourceControlsOpen = !sourceControlsOpen)}
+          >位置來源：{pending.value.coordinate ? sourceLabel(pending.value.coordinate) : '尚未設定'} ›</Button
+        >
+        <Button onclick={applySettings} label="套用">套用座標設定</Button>
+        <p class="muted">TWD97 可選 TM2 121／119 分帶；MGRS 可選精度。</p>
+      </div>
+      {#if sourceControlsOpen}
+        <MapConsent
+          open={consentOpen}
+          onAccept={() => {
+            mapConsented = grantMapConsent(localStorage).status === 'granted';
+            consentOpen = false;
+            view = 'map';
+          }}
+          onDecline={() => (consentOpen = false)}
+        />
+        <div class="tools">
+          <Button variant="secondary" onclick={requestMap}>在地圖上選取</Button><Button
+            variant="secondary"
+            disabled={locating}
+            onclick={locate}>{locating ? '定位中…' : '使用目前位置'}</Button
+          >
+        </div>
+        {#if locationCandidate}<section class="panel">
+            <h2>確認目前位置</h2>
+            <p>{locationCandidate.latitude.toFixed(6)}, {locationCandidate.longitude.toFixed(6)}</p>
+            <p>
+              精確度：{locationCandidate.accuracyMeters === null
+                ? '無法取得'
+                : `約 ${locationCandidate.accuracyMeters} 公尺`}
+            </p>
+            <p>目前位置可能不是照片拍攝地點。</p>
+            <Button
+              onclick={() => {
+                if (pending && locationCandidate) {
+                  pending.value.coordinate = locationCandidate;
+                  locationCandidate = null;
+                  applySettings();
+                }
+              }}>確認使用目前位置</Button
+            >
+          </section>{/if}
+        <section class="panel">
+          <h2>手動輸入</h2>
+          <label>緯度<input type="text" inputmode="decimal" bind:value={latitude} /></label><label
+            >經度<input type="text" inputmode="decimal" bind:value={longitude} /></label
+          ><Button
+            onclick={() => {
+              if (!latitude.trim() || !longitude.trim()) {
+                error = '請填寫緯度與經度。';
+                return;
+              }
+              chooseCoordinate(Number(latitude), Number(longitude), 'MANUAL_INPUT');
+            }}>使用輸入的座標</Button
+          >
+        </section>
+        <Button
+          variant="secondary"
+          onclick={() => {
+            if (pending) {
+              pending.value.coordinate = null;
+              applySettings();
+            }
+          }}>不顯示座標</Button
+        >
+      {/if}
+      <Button variant="secondary" onclick={cancelSettings}>取消</Button>
     {:else if view === 'cornerText' && pending}
       <div class="tools">
         <Button variant="secondary" onclick={() => (view = 'textStyle')}>文字樣式與底色</Button
@@ -985,6 +1107,8 @@
       >
     {:else if view === 'templates' && pending}
       <TemplatePicker
+        photoUrl={sourceUrl}
+        onApply={applySettings}
         templates={templateItems}
         selected={pending.value.template}
         defaultId={defaultTemplateId}
@@ -994,13 +1118,15 @@
         onNew={() => editTemplate(true)}
       />
       {#if message}<p role="status">{message}</p>{/if}
-
-      <Button onclick={applySettings}>套用</Button><Button
-        variant="secondary"
-        onclick={cancelSettings}>取消</Button
-      >
     {:else if view === 'templateEdit' && pending}
       <TemplateEditor
+        {photo}
+        storedAssets={watermarkAssets}
+        isDefault={defaultTemplateId === pending.value.template.id}
+        onHeading={(heading, subtitle) => {
+          templateHeading = heading;
+          templateSubtitle = subtitle;
+        }}
         bind:this={templateEditor}
         initial={pending.value.template}
         texts={pending.value.texts}
@@ -1089,6 +1215,12 @@
   {/if}
   <footer>{ready ? '已可離線使用' : '本機處理 · 離線就緒狀態尚未確認'}</footer>
 </EditorShell>
+{#if discardOpen}<DiscardDraftDialog
+    busy={discarding}
+    error={discardError}
+    onConfirm={discardDraft}
+    onCancel={() => (discardOpen = false)}
+  />{/if}
 
 <style>
   .file-input {
@@ -1103,6 +1235,27 @@
     overflow: hidden;
     background: var(--pm-color-pale);
   }
+  .editor-preview {
+    height: 296px;
+    flex-shrink: 0;
+  }
+  .editor-preview img {
+    height: 100%;
+  }
+  .coordinate-summary {
+    margin: 8px 0;
+  }
+  .coordinate-summary strong {
+    font-size: 14px;
+  }
+
+  .template-preview {
+    height: 250px;
+    flex-shrink: 0;
+  }
+  .template-preview img {
+    height: 100%;
+  }
   .photo img {
     display: block;
     width: 100%;
@@ -1115,6 +1268,15 @@
     background: var(--pm-color-pale);
     display: grid;
     gap: 12px;
+  }
+  .panel {
+    min-width: 0;
+  }
+  .coordinate-value {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    line-height: 1.7;
+    font-variant-numeric: tabular-nums;
   }
   .panel p,
   .panel h2 {
@@ -1143,7 +1305,7 @@
   }
   .tools {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
     gap: 10px;
   }
   .bottom {
@@ -1161,28 +1323,75 @@
     text-align: center;
     margin-top: 12px;
   }
+  .coordinate-settings,
+  .coordinate-placement,
+  .coordinate-actions {
+    display: grid;
+    gap: 12px;
+  }
+  .tools :global(button) {
+    padding-inline: 8px;
+  }
+  .coordinate-settings .tools {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 9px;
+  }
+  .coordinate-settings {
+    padding-top: 16px;
+  }
+  .coordinate-settings h2,
+  .coordinate-placement h2 {
+    margin: 0;
+    font-size: 15px;
+  }
+  .coordinate-settings p,
+  .coordinate-placement p,
+  .coordinate-actions p {
+    margin: 0;
+  }
+  .coordinate-settings .coordinate-value {
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--pm-color-accent);
+    line-height: 1.5;
+  }
+  .coordinate-placement {
+    margin-top: 25px;
+  }
+  .coordinate-actions {
+    margin-top: 25px;
+  }
   .choice {
     min-height: 50px;
     padding: 8px;
     background: white;
-    border: 2px solid var(--pm-color-border);
+    border: 0;
     border-radius: 14px;
     color: var(--pm-color-ink);
   }
   .choice[aria-pressed='true'] {
     border-color: var(--pm-color-accent);
-    background: var(--pm-color-pale);
+    background: var(--pm-color-accent);
+    color: white;
   }
   .error {
     color: var(--pm-color-error);
     font-size: 14px;
   }
+  .discard {
+    min-height: 44px;
+    border: 0;
+    background: transparent;
+    color: var(--pm-color-muted);
+    font-size: 13px;
+  }
   label {
     display: grid;
     gap: 8px;
   }
-  input,
-  select {
+  label:not(.pm-field) input,
+  label:not(.pm-field) select {
+    min-width: 0;
     min-height: 48px;
     width: 100%;
     padding: 10px;

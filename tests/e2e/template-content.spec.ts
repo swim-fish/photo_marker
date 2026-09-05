@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 async function templates(page: Page) {
   await page.goto('/');
-  await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/sample.png');
+  await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/editor-photo.png');
   await page.getByRole('button', { name: '樣板', exact: true }).click();
 }
 async function panel(page: Page, name: string) {
@@ -43,7 +43,7 @@ test('creates, edits and restores template defaults through the right-side edito
   await page.getByRole('button', { name: '設為預設：巡查樣板' }).click();
   await expect(page.getByText('已設定新照片預設樣板')).toBeVisible();
   await page.reload();
-  await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/sample.png');
+  await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/editor-photo.png');
   await page.getByRole('button', { name: '樣板', exact: true }).click();
   await page.screenshot({
     path: `build/template-list-${test.info().project.name}.png`,
@@ -93,21 +93,32 @@ test('persists PNG watermark assets when saving the template editor', async ({ p
   await page.getByLabel('樣板名稱').fill('圖片樣板');
   await panel(page, '^浮水印');
   await page.getByLabel('啟用浮水印').check();
-  await page.getByLabel('浮水印類型').selectOption('image');
   await page.getByLabel('選取 PNG 浮水印').setInputFiles('tests/integration/fixtures/sample.png');
   await done(page);
   await page.getByRole('button', { name: '儲存目前設定為樣板' }).click();
   await page.getByRole('button', { name: '設為預設：圖片樣板' }).click();
   await expect(page.getByText('已設定新照片預設樣板')).toBeVisible();
   await page.reload();
-  await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/sample.png');
+  await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/editor-photo.png');
   await page.getByRole('button', { name: '樣板', exact: true }).click();
   await page.getByRole('button', { name: '編輯目前樣板' }).click();
   await panel(page, '^浮水印');
-  await expect(page.getByLabel('浮水印類型')).toHaveValue('image');
+  await expect(page.getByText('替換 PNG 圖片浮水印', { exact: true })).toBeVisible();
   await expect(page.getByLabel('啟用浮水印')).toBeChecked();
   await done(page);
   await page.getByRole('button', { name: '儲存變更' }).click();
   await page.getByRole('button', { name: '套用', exact: true }).click();
   await expect(page.getByRole('heading', { name: '編輯照片' })).toBeVisible();
+});
+
+test('saves a new template as the next import default from its editor', async ({ page }) => {
+  await templates(page);
+  await page.getByRole('button', { name: '＋ 自訂樣板' }).click();
+  await page.getByLabel('樣板名稱').fill('下次使用');
+  await page.getByLabel('設為下次匯入的預設樣板').check();
+  await page.getByRole('button', { name: '儲存目前設定為樣板' }).click();
+  await expect(page.getByRole('button', { name: '設為預設：下次使用' })).toBeDisabled();
+  await page.reload();
+  await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/editor-photo.png');
+  await expect(page.getByText('目前樣板：下次使用')).toBeVisible();
 });

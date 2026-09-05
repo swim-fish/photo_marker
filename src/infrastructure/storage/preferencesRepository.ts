@@ -104,11 +104,12 @@ export class PreferencesRepository {
   saveTemplate(
     template: AnnotationTemplate,
     assets: readonly WatermarkAsset[] = [],
+    makeDefault = false,
   ): Promise<SettingsResult<void>> {
     return this.run(async (db) => {
       const clean = sanitizeTemplate(template);
       if (!clean) throw new Error('validation');
-      const tx = db.transaction(['templates', 'watermarkAssets'], 'readwrite');
+      const tx = db.transaction(['templates', 'watermarkAssets', 'preferences'], 'readwrite');
       try {
         for (const asset of assets) {
           const existing = await tx.objectStore('watermarkAssets').get(asset.id);
@@ -122,6 +123,16 @@ export class PreferencesRepository {
         )
           throw new Error('asset-not-found');
         await tx.objectStore('templates').put(clean, clean.id);
+        if (makeDefault) {
+          const current = (await tx.objectStore('preferences').get('editor')) ?? {
+            version: 1,
+            cornerTexts: emptyCornerTexts(),
+          };
+          if (current.version !== 1) throw new Error('incompatible-version');
+          await tx
+            .objectStore('preferences')
+            .put({ ...current, defaultTemplateId: clean.id }, 'editor');
+        }
         this.beforeCommit?.();
         await tx.done;
       } catch (error) {

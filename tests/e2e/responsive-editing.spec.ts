@@ -3,7 +3,7 @@ for (const width of [320, 768, 1280]) {
   test(`new controls fit ${width}px and keyboard activates once`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 720 });
     await page.goto('/');
-    await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/sample.png');
+    await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/editor-photo.png');
     await page.getByRole('button', { name: '四角文字', exact: true }).click();
     await page.getByRole('button', { name: '文字樣式與底色' }).click();
     const plus = page.getByRole('button', { name: '增加文字大小' });

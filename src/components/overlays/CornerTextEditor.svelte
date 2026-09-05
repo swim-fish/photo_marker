@@ -16,10 +16,12 @@
 </script>
 
 <div class="corner-text">
-  {#each corners as corner (corner.id)}<label
-      >{corner.label}文字<textarea
+  {#each corners as corner (corner.id)}<label class="pm-field"
+      ><span>{corner.label}角</span><textarea
+        aria-label={`${corner.label}文字`}
+        placeholder="不顯示文字"
         value={value[corner.id]}
-        rows="2"
+        rows="1"
         oninput={(event) => onChange({ ...value, [corner.id]: event.currentTarget.value })}
       ></textarea></label
     >{/each}
@@ -30,27 +32,12 @@
 <style>
   .corner-text {
     display: grid;
-    gap: 16px;
-    grid-template-columns: 1fr 1fr;
-  }
-  label {
-    display: grid;
-    gap: 8px;
-  }
-  textarea {
-    min-width: 0;
-    width: 100%;
-    resize: vertical;
-    border: 1px solid var(--pm-color-border);
-    border-radius: 14px;
-    padding: 12px;
-    background: white;
-    color: var(--pm-color-ink);
+    gap: 12px;
   }
   .save {
     min-height: 50px;
     padding: 12px;
-    border: 1px solid var(--pm-color-border);
+    border: 0;
     background: white;
     color: var(--pm-color-ink);
     border-radius: 14px;
@@ -58,10 +45,5 @@
   p {
     color: var(--pm-color-muted);
     font-size: 12px;
-  }
-  @media (max-width: 350px) {
-    .corner-text {
-      grid-template-columns: 1fr;
-    }
   }
 </style>

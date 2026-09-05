@@ -6,7 +6,7 @@ export async function completeOfflineDraftJourney(
 ): Promise<void> {
   await page.goto('/');
   await expect(page.getByText('已可離線使用', { exact: true })).toBeVisible({ timeout: 15000 });
-  await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/sample.png');
+  await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/editor-photo.png');
   await page.getByRole('button', { name: '座標', exact: true }).click();
   await page.getByLabel('緯度', { exact: true }).fill('25.033');
   await page.getByLabel('經度', { exact: true }).fill('121.5654');

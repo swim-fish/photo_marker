@@ -14,6 +14,27 @@ describe('unified preferences transactions', () => {
     await deleteDraftDatabase();
   });
 
+  it('commits the default selection with the template and rolls both back on failure', async () => {
+    const db = await openDraftDatabase();
+    try {
+      const preferences = new PreferencesRepository(db);
+      expect(
+        (await preferences.saveTemplate({ ...defaultTemplate, id: 'first' }, [], true)).ok,
+      ).toBe(true);
+      expect((await db.get('preferences', 'editor'))?.defaultTemplateId).toBe('first');
+      const failing = new PreferencesRepository(db, () => {
+        throw new DOMException('full', 'QuotaExceededError');
+      });
+      expect((await failing.saveTemplate({ ...defaultTemplate, id: 'second' }, [], true)).ok).toBe(
+        false,
+      );
+      expect(await db.get('templates', 'second')).toBeUndefined();
+      expect((await db.get('preferences', 'editor'))?.defaultTemplateId).toBe('first');
+    } finally {
+      db.close();
+    }
+  });
+
   it('roundtrips canonical defaults and keeps them after session cleanup', async () => {
     const db = await openDraftDatabase();
     const preferences = new PreferencesRepository(db);

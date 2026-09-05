@@ -18,6 +18,7 @@ export type AnnotationTemplate = Readonly<{
   appearance: EditorAppearance;
   coordinateFormat: EditorCoordinateFormat;
   coordinateCorner: OverlayCorner;
+  coordinateWrap?: 'auto' | 'nowrap';
   zone: 119 | 121;
   precision: number;
   watermark: WatermarkConfig;
@@ -47,6 +48,7 @@ export const defaultTemplate: AnnotationTemplate = {
   },
   coordinateFormat: 'WGS84_DD',
   coordinateCorner: 'bottom-left',
+  coordinateWrap: 'auto',
   zone: 121,
   precision: 5,
   watermark: defaultWatermark,

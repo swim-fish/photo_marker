@@ -38,7 +38,7 @@
   button.secondary {
     color: var(--pm-color-ink);
     background: white;
-    border-color: var(--pm-color-border);
+    border-color: transparent;
   }
   button:disabled {
     opacity: 0.5;

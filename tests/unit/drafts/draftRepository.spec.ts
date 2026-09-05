@@ -74,6 +74,32 @@ describe('DraftRepository', () => {
     await deleteDraftDatabase();
   });
 
+  it('rolls back deletions if discarding fails midway through the transaction', async () => {
+    const repository = new DraftRepository();
+    await repository.save(snapshot(1));
+    await repository.save(snapshot(2));
+    const remove = IDBObjectStore.prototype.delete;
+    let count = 0;
+    const fault = vi.spyOn(IDBObjectStore.prototype, 'delete').mockImplementation(function (
+      this: IDBObjectStore,
+      key,
+    ) {
+      if (++count === 2) throw new DOMException('injected failure', 'UnknownError');
+      return remove.call(this, key);
+    });
+    expect((await repository.discard(sessionId)).ok).toBe(false);
+    fault.mockRestore();
+    const db = await openDraftDatabase();
+    try {
+      expect(await db.count('revisions')).toBe(2);
+      expect(await db.count('photos')).toBe(1);
+      expect(await db.count('sessions')).toBe(1);
+    } finally {
+      db.close();
+    }
+    expect((await repository.restore(sessionId)).ok).toBe(true);
+  });
+
   it('commits revisions transactionally and restores the newest complete revision with a Blob', async () => {
     const repository = new DraftRepository();
     const first = await repository.save(snapshot(1));
