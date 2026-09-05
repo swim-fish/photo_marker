@@ -41,8 +41,17 @@ jobs:
         env:
           PHOTO_MARKER_BASE_PATH: /photo_marker/
       - run: npx playwright install --with-deps chromium
+      # Keep deployment checks fixable without moving an already published tag.
+      - name: Check out deployment checks
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .deployment-checks
+          sparse-checkout: tests/e2e/pages-release.spec.ts
+          sparse-checkout-cone-mode: false
       - name: Verify Pages build and offline startup
         run: |
+          cp .deployment-checks/tests/e2e/pages-release.spec.ts tests/e2e/pages-release.spec.ts
           npm run preview -- --host 127.0.0.1 --port 4176 --base /photo_marker/ &
           for attempt in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:4176/photo_marker/ > /dev/null; then break; fi

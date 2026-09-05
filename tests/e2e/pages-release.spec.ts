@@ -1,5 +1,9 @@
 import { expect, test } from '@playwright/test';
-import { version } from '../../package.json';
+import { readFileSync } from 'node:fs';
+
+const { version } = JSON.parse(
+  readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+);
 
 test('Pages release loads its version, fonts, and offline shell under the project path', async ({
   page,
