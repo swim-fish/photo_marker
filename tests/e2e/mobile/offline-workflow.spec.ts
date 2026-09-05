@@ -1,7 +1,7 @@
 import { test } from '../fixtures';
 import { completeOfflineDraftJourney } from '../offlineJourney';
 
-test('restores and clears a local draft in the offline mobile PWA', async ({
+test('restores, exports and retains a local draft in the offline mobile PWA', async ({
   page,
   context,
   viewportKind,

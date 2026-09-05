@@ -1,457 +1,443 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
-
-  import CoordinateCard from '../coordinate/CoordinateCard.svelte';
-  import BatchResults from '../export/BatchResults.svelte';
-  import BatchReview from '../export/BatchReview.svelte';
-  import BatchSettings, { type SharedSettingsValue } from '../export/BatchSettings.svelte';
-  import ExportReview from '../export/ExportReview.svelte';
-  import ExportResults from '../export/ExportResults.svelte';
-  import ExportSettings from '../export/ExportSettings.svelte';
-  import MapConsent from '../map/MapConsent.svelte';
-  import MapPreview from '../map/MapPreview.svelte';
-  import OverlayInspector from '../overlays/OverlayInspector.svelte';
-  import OverlayList from '../overlays/OverlayList.svelte';
-  import CornerPicker from '../overlays/CornerPicker.svelte';
-  import CoordinateOverlayOptions, {
-    type CoordinateSelectionMode,
-  } from '../overlays/CoordinateOverlayOptions.svelte';
-  import DraftRecovery from './DraftRecovery.svelte';
-  import DraftStatus from './DraftStatus.svelte';
+  import { onMount, onDestroy } from 'svelte';
+  import TemplatePicker from '../templates/TemplatePicker.svelte';
+  import {
+    builtinTemplates,
+    applyTemplate,
+    sanitizeTemplate,
+  } from '../../domain/templates/templateService';
+  import { ensureEditorFont } from '../../renderer/font';
+  import EditorShell from './EditorShell.svelte';
+  import Button from '../ui/Button.svelte';
+  import NumberStepper from '../ui/NumberStepper.svelte';
+  import WatermarkEditor from '../watermarks/WatermarkEditor.svelte';
+  import { arrangeWatermark, resolveWatermarkArrangement } from '../../domain/watermarks/layout';
+  import { importWatermark } from '../../domain/watermarks/intake';
   import type {
-    CoordinateDisplayFormat,
-    CoordinateRecord,
-    Wgs84Coordinate,
-  } from '../../domain/coordinates/types';
-  import { formatCoordinate } from '../../domain/coordinates/formatCoordinate';
-  import type { ParsedCoordinate } from '../../domain/coordinates/parseCoordinateInput';
+    WatermarkArrangement,
+    WatermarkAsset,
+    WatermarkRenderLayer,
+  } from '../../domain/watermarks/types';
+  import RgbaPicker from '../ui/RgbaPicker.svelte';
+  import { rgbHex } from '../../domain/overlays/color';
+  import MapPreview from '../map/MapPreview.svelte';
+  import MapConsent from '../map/MapConsent.svelte';
+  import { grantMapConsent, readMapConsent, revokeMapConsent } from '../../domain/map/mapConsent';
+  import { requestCurrentLocation } from '../../infrastructure/platform/geolocation';
+  import { importPhoto } from '../../domain/photos/importPhoto';
+  import type { SourcePhoto } from '../../domain/photos/types';
+  import type { CoordinateRecord } from '../../domain/coordinates/types';
   import { replaceWorkingCoordinate } from '../../domain/coordinates/workingCoordinate';
-  import { createDraftService, type DraftService } from '../../domain/drafts/draftService';
+  import { formatCoordinateOverlay } from '../../domain/overlays/coordinateOverlay';
+  import { buildCornerOverlays } from '../../domain/editor/cornerLayout';
+  import { formatCoordinate } from '../../domain/coordinates/formatCoordinate';
+  import CornerTextEditor from '../overlays/CornerTextEditor.svelte';
+  import type { TextOverlay } from '../../domain/overlays/types';
   import { createEditingSession, editingSessionReducer } from '../../domain/drafts/editingSession';
   import type { EditingSession } from '../../domain/drafts/types';
-  import { exportPhoto } from '../../domain/export/exportPhoto';
   import {
-    exportBatchSequentially,
-    retryFailedBatchExports,
-    type BatchExportWorkItem,
-  } from '../../domain/export/batchExport';
-  import type { ExportConfiguration, ExportResult } from '../../domain/export/types';
-  import { isExportConfigurationReady } from '../../domain/export/types';
-  import {
-    grantMapConsent,
-    MAP_CONSENT_POLICY_VERSION,
-    readMapConsent,
-    revokeMapConsent,
-  } from '../../domain/map/mapConsent';
-  import type { MapNetworkConsent } from '../../domain/map/types';
-  import {
-    createOverlay,
-    moveOverlay,
-    removeOverlay,
-    reorderOverlays,
-    resizeOverlay,
-    updateOverlay,
-  } from '../../domain/overlays/overlayEditor';
-  import { formatCoordinateOverlay } from '../../domain/overlays/coordinateOverlay';
-  import { findCornerPlacement, overlapsAny } from '../../domain/overlays/placement';
-  import type { OverlayCorner, OverlayRole, TextOverlay } from '../../domain/overlays/types';
-  import { importPhoto } from '../../domain/photos/importPhoto';
-  import {
-    applySharedBatchSettings,
-    batchExportReadiness,
-    createBatchSession,
-    removeInvalidBatchItem,
-    selectBatchItem,
-    setBatchItemDecision,
-    updateBatchItem,
-    type BatchSession,
-    type EditableBatchItem,
-    type InvalidBatchIntake,
-  } from '../../domain/photos/batchSession';
-  import type { SourcePhoto } from '../../domain/photos/types';
-  import { requestCurrentLocation } from '../../infrastructure/platform/geolocation';
-  import { sanitizeDiagnostic } from '../../infrastructure/platform/diagnostics';
-  import {
-    consumeSharedFiles,
     DraftRepository,
+    consumeSharedFiles,
     type DraftSnapshot,
   } from '../../infrastructure/storage/draftRepository';
-  import { openDraftDatabase } from '../../infrastructure/storage/database';
+  import { PreferencesRepository } from '../../infrastructure/storage/preferencesRepository';
+  import {
+    defaultTemplate,
+    emptyCornerTexts,
+    type AnnotationTemplate,
+    type EditorAppearance,
+    type CornerTexts,
+  } from '../../domain/templates/types';
+  import {
+    beginSettings,
+    commitSettings,
+    type SettingsTransaction,
+    type EditorView,
+  } from '../../domain/editor/editorState';
+  import { createRenderWorkerClient } from '../../infrastructure/platform/renderWorkerClient';
+  import { exportPhoto } from '../../domain/export/exportPhoto';
+  import type { ExportConfiguration } from '../../domain/export/types';
   import {
     establishOfflineReadiness,
-    type OfflineReadinessResult,
     requestWorkerReadiness,
   } from '../../infrastructure/pwa/readiness';
-  import { messages } from '../../i18n';
-  import ImportPanel from './ImportPanel.svelte';
-  import InstallHelp from './InstallHelp.svelte';
-  import OfflineStatus from './OfflineStatus.svelte';
-  import PhotoNavigator, { type PhotoNavigatorEntry } from './PhotoNavigator.svelte';
-  import PhotoStatus from './PhotoStatus.svelte';
-  import PreviewStage from './PreviewStage.svelte';
-  import StatusRegion from './StatusRegion.svelte';
-  import StepNavigation, { type EditingStep } from './StepNavigation.svelte';
+  import { openDraftDatabase } from '../../infrastructure/storage/database';
 
-  const t = messages.en;
-
-  type ViewState = 'empty' | 'loading' | 'error' | 'editing' | 'exporting' | 'success';
-  type DraftUiStatus = 'idle' | 'saving' | 'saved' | 'denied' | 'quotaExceeded' | 'error';
-
-  let viewState = $state<ViewState>('empty');
-  let activeStep = $state<EditingStep>('photo');
+  type EditSettings = {
+    template: AnnotationTemplate;
+    texts: CornerTexts;
+    coordinate: CoordinateRecord | null;
+  };
+  let templateItems = $state<AnnotationTemplate[]>([...builtinTemplates]);
+  let defaultTemplateId = $state<string>('outdoor');
+  let templateRequest = 0;
   let photo = $state<SourcePhoto | null>(null);
-  let photoUrl = $state('');
-  let coordinate = $state<CoordinateRecord | null>(null);
+  let session = $state<EditingSession | null>(null);
+  let settings = $state<EditSettings>({
+    template: structuredClone(defaultTemplate),
+    texts: emptyCornerTexts(),
+    coordinate: null,
+  });
+  let pending = $state<SettingsTransaction<EditSettings> | null>(null);
+  let view = $state<EditorView>('editor');
+  let watermarkArrangement = $state<WatermarkArrangement | null>(null);
+  let watermarkAssets = $state<WatermarkAsset[]>([]);
   let overlays = $state<TextOverlay[]>([]);
-  let selectedOverlayId = $state<string | null>(null);
-  let coordinateSelectionMode = $state<CoordinateSelectionMode>('single');
-  let coordinateFormats = $state<CoordinateDisplayFormat[]>([]);
-  let coordinateCorner = $state<OverlayCorner>('bottom-left');
-  let textCorner = $state<OverlayCorner>('top-right');
-  let configuration = $state<ExportConfiguration | null>(null);
-  let errorMessage = $state('');
-  let locationError = $state('');
-  let manualError = $state('');
-  let reviewOpen = $state(false);
-  let outputName = $state('');
-  let exportResults = $state<ExportResult[]>([]);
-  let batchSession = $state<BatchSession | null>(null);
-  let batchReviewOpen = $state(false);
-  let batchTotal = $state(0);
-  let draftSession = $state<EditingSession | null>(null);
-  let draftStatus = $state<DraftUiStatus>('idle');
-  let recoverableDraft = $state<DraftSnapshot | null>(null);
-  let draftRecoveryOpen = $state(false);
-  let draftRecoveryIssue = $state('');
-  let offlineReadiness = $state<OfflineReadinessResult>({
-    status: 'not-ready',
-    reason: 'service-worker-unavailable',
-  });
-  let installedApp = $state(false);
-  let mapConsent = $state<MapNetworkConsent>({
-    policyVersion: MAP_CONSENT_POLICY_VERSION,
-    status: 'unknown',
-    providerId: 'nlsc-emap5',
-    grantedAt: null,
-    revokedAt: null,
-  });
-  let mapConsentOpen = $state(false);
-  let mapPreviewOpen = $state(false);
-  let isOnline = $state(true);
-  let statusMessage = $state<string>(t.readyStatus);
+  let previewUrl = $state('');
+  let previewBusy = $state(false);
+  let sourceUrl = $state('');
+  let loading = $state(false);
+  let exporting = $state(false);
+  let ready = $state(false);
+  let message = $state('');
+  let error = $state('');
+  let saved = $state('');
+  let recovery = $state<DraftSnapshot | null>(null);
+  let config = $state<ExportConfiguration | null>(null);
+  let colorValid = $state(true);
+  let mapConsented = $state(false),
+    consentOpen = $state(false),
+    online = $state(true),
+    locating = $state(false);
+  let latitude = $state(''),
+    longitude = $state('');
+  let locationCandidate = $state<CoordinateRecord | null>(null);
+  let locationRequest = 0;
+  let selectedFiles = $state<HTMLInputElement>();
+  let importGeneration = 0;
+  let renderGeneration = 0;
+  let saveTail: Promise<void> = Promise.resolve();
+  const drafts = new DraftRepository();
+  const preferences = new PreferencesRepository();
+  const renderer = createRenderWorkerClient();
+  const display = $derived(pending?.value ?? settings);
+  const title = $derived(
+    !photo
+      ? 'Photo Marker'
+      : view === 'exportReview'
+        ? '匯出照片'
+        : view === 'exportResult'
+          ? '照片已準備好'
+          : view === 'coordinate'
+            ? '座標設定'
+            : view === 'map'
+              ? '選取照片位置'
+              : view === 'cornerText'
+                ? '四角文字'
+                : view === 'textStyle'
+                  ? '文字樣式'
+                  : view === 'watermark'
+                    ? '浮水印'
+                    : view === 'templates'
+                      ? '選擇樣板'
+                      : '編輯照片',
+  );
 
-  const draftRepository = new DraftRepository();
-  let draftService: DraftService;
-  draftService = createDraftService({
-    repository: draftRepository,
-    onSave: (result) => {
-      if (!result.ok) {
-        draftStatus = result.error.code === 'quota-exceeded' ? 'quotaExceeded' : 'error';
-        return;
-      }
-      draftStatus = result.value.persistenceStatus === 'denied' ? 'denied' : 'saved';
-      if (draftSession?.id === result.value.sessionId) {
-        draftSession = editingSessionReducer(draftSession, {
-          type: 'mark-persisted',
-          revision: result.value.revision,
-        });
-      }
-    },
-  });
-
-  const selectedOverlay = $derived(
-    overlays.find((overlay) => overlay.id === selectedOverlayId) ?? null,
-  );
-  const textOverlays = $derived(overlays.filter((overlay) => overlay.role !== 'coordinate'));
-  const coordinateReady = $derived(coordinate?.validationStatus === 'valid');
-  const overlaysReady = $derived(overlays.length > 0);
-  const configurationReady = $derived(
-    Boolean(configuration && photo && isExportConfigurationReady(configuration, photo.sourceMime)),
-  );
-  const canReview = $derived(coordinateReady && overlaysReady && configurationReady);
-  const isBatch = $derived((batchSession?.items.length ?? 0) > 1);
-  const canOpenReview = $derived(isBatch ? Boolean(batchSession) : canReview);
-  const disabledReason = $derived(
-    !coordinateReady
-      ? t.resolveCoordinateBeforeExport
-      : !overlaysReady
-        ? t.addOverlayBeforeExport
-        : !configurationReady
-          ? t.chooseMetadataOrSourceFormat
-          : '',
-  );
-  const displayText = $derived.by(() => {
-    if (!coordinate) return '';
-    const result = formatCoordinate(coordinate, coordinate.displayFormat, {
-      zone: coordinate.zone,
-      precision: coordinate.precision,
-    });
-    return result.ok ? result.value.text : '';
-  });
-  const batchNavigatorItems = $derived.by((): PhotoNavigatorEntry[] => {
-    if (!batchSession) return [];
-    const results = new Map(exportResults.map((result) => [result.photoId, result]));
-    return batchSession.items.map((item) => {
-      if (item.kind === 'invalid') {
-        return {
-          id: item.id,
-          name: item.sourceName,
-          status: 'Invalid',
-          failureCode: item.failureCode,
-        };
-      }
-      const result = results.get(item.id);
-      const status: PhotoNavigatorEntry['status'] =
-        result?.status === 'handedOff'
-          ? 'Exported'
-          : result?.status === 'failed'
-            ? 'Failed'
-            : item.decision === 'omit'
-              ? 'Omitted'
-              : item.coordinate?.validationStatus === 'valid' ||
-                  item.decision === 'withoutCoordinate'
-                ? 'Ready'
-                : 'Missing coordinate';
-      return {
-        id: item.id,
-        name: item.sourceName,
-        status,
-        provenance: item.coordinate ? provenanceLabel(item.coordinate.provenance) : undefined,
-        failureCode: result?.failureCode ?? item.failureCode ?? undefined,
+  function updateAppearance(update: Partial<EditorAppearance>): void {
+    if (pending)
+      pending.value.template = {
+        ...pending.value.template,
+        appearance: { ...pending.value.template.appearance, ...update },
       };
+  }
+  function sourceLabel(value: CoordinateRecord): string {
+    return value.provenance === 'CAPTURE_METADATA'
+      ? '照片 GPS'
+      : value.provenance === 'CURRENT_GPS'
+        ? 'CURRENT GPS'
+        : value.provenance === 'MAP_SELECTION'
+          ? '地圖選取'
+          : '手動輸入';
+  }
+  function coordinateSummary(): string {
+    if (!settings.coordinate) return '可補上位置，或直接加上文字。';
+    if (settings.template.coordinateFormat === 'WGS84_DD')
+      return `${settings.coordinate.latitude.toFixed(6)}, ${settings.coordinate.longitude.toFixed(6)}`;
+    const formatted = formatCoordinate(settings.coordinate, settings.template.coordinateFormat, {
+      zone: settings.template.zone,
+      precision: settings.template.precision,
     });
-  });
-
-  function changeStep(step: EditingStep): void {
-    activeStep = step;
-    if (step === 'text' && selectedOverlay?.role === 'coordinate') {
-      selectedOverlayId = textOverlays[0]?.id ?? null;
-    }
+    return formatted.ok ? formatted.value.text : '此格式無法表示目前位置';
   }
-  const batchReviewItems = $derived(
-    batchNavigatorItems.map((item) => {
-      const source = batchSession?.items.find((candidate) => candidate.id === item.id);
-      return {
-        id: item.id,
-        name: item.name,
-        status: item.status,
-        decision: source?.kind === 'editable' ? source.decision : ('required' as const),
-        configurationReady:
-          source?.kind === 'editable'
-            ? isExportConfigurationReady(source.configuration, source.photo.sourceMime)
-            : true,
-      };
-    }),
-  );
-  const batchResultItems = $derived.by(() => {
-    if (!batchSession) return [];
-    const results = new Map(exportResults.map((result) => [result.photoId, result]));
-    return batchSession.items.map((item) => {
-      if (item.kind === 'invalid') {
-        return {
-          id: item.id,
-          name: item.sourceName,
-          status: 'Failed' as const,
-          failureCode: item.failureCode,
-          retryable: false,
-        };
-      }
-      const result = results.get(item.id);
-      if (item.decision === 'omit' || result?.status === 'omitted') {
-        return { id: item.id, name: item.sourceName, status: 'Omitted' as const };
-      }
-      if (result?.status === 'handedOff') {
-        return {
-          id: item.id,
-          name: item.sourceName,
-          status: 'Exported' as const,
-          outputName: result.outputName ?? undefined,
-        };
-      }
-      if (result?.status === 'cancelled') {
-        return {
-          id: item.id,
-          name: item.sourceName,
-          status: 'Cancelled' as const,
-          failureCode: result.failureCode ?? undefined,
-        };
-      }
-      return {
-        id: item.id,
-        name: item.sourceName,
-        status: 'Failed' as const,
-        failureCode: result?.failureCode ?? 'not-exported',
-        retryable: true,
-      };
-    });
-  });
-
-  function provenanceLabel(provenance: CoordinateRecord['provenance']): string {
-    return provenance === 'CAPTURE_METADATA'
-      ? t.captureMetadata
-      : provenance === 'CURRENT_GPS'
-        ? t.currentGps
-        : t.manualInput;
-  }
-
-  function nextId(prefix: string): string {
-    return typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  }
-
-  function revokePhotoUrl(): void {
-    if (photoUrl) URL.revokeObjectURL(photoUrl);
-    photoUrl = '';
-  }
-
-  function syncActiveBatchItem(): void {
-    if (!batchSession || !photo || !configuration) return;
-    const existing = batchSession.items.find(
-      (item): item is EditableBatchItem => item.kind === 'editable' && item.id === photo?.id,
+  function buildOverlays(value: EditSettings): TextOverlay[] | null {
+    if (!photo) return [];
+    const coordinate = value.coordinate
+      ? { ...value.coordinate, zone: value.template.zone, precision: value.template.precision }
+      : null;
+    if (
+      coordinate &&
+      !formatCoordinate(coordinate, value.template.coordinateFormat, {
+        zone: value.template.zone,
+        precision: value.template.precision,
+      }).ok
+    )
+      return null;
+    const text = coordinate
+      ? formatCoordinateOverlay(
+          coordinate,
+          sourceLabel(coordinate),
+          value.template.coordinateFormat,
+        )
+      : '';
+    const context =
+      typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d');
+    const result = buildCornerOverlays(
+      photo.id,
+      { width: photo.displayWidth, height: photo.displayHeight },
+      value.template,
+      value.texts,
+      text,
+      context
+        ? (text, fontSize) => {
+            context.font = `${fontSize}px "Noto Sans TC", sans-serif`;
+            return context.measureText(text).width;
+          }
+        : undefined,
     );
-    if (!existing) return;
-    const result = exportResults.find((entry) => entry.photoId === photo?.id);
-    const reviewStatus =
-      result?.status === 'handedOff'
-        ? 'exported'
-        : result?.status === 'failed'
-          ? 'failed'
-          : existing.decision === 'omit'
-            ? 'omitted'
-            : coordinate?.validationStatus === 'valid' || existing.decision === 'withoutCoordinate'
-              ? 'ready'
-              : 'missingCoordinate';
-    batchSession = updateBatchItem(batchSession, photo.id, {
-      photo: {
-        ...photo,
-        coordinateId: coordinate?.id ?? null,
-        overlayIds: overlays.map((overlay) => overlay.id),
-        reviewStatus,
-        failureCode: result?.failureCode ?? null,
-      },
-      coordinate,
-      overlays: [...overlays],
-      configuration,
-      status: reviewStatus,
-      failureCode: result?.failureCode ?? null,
-    });
+    return result.ok ? result.value : null;
   }
-
-  function currentDraftSnapshot(): DraftSnapshot | null {
-    syncActiveBatchItem();
-    if (!draftSession || !batchSession) return null;
-    const editableItems = batchSession.items.filter(
-      (item): item is EditableBatchItem => item.kind === 'editable',
+  function watermarkLayer(value: EditSettings): WatermarkRenderLayer | undefined {
+    if (!photo) return undefined;
+    const image = watermarkAssets.find((asset) => asset.id === value.template.watermark.assetId);
+    const arrangement = arrangeWatermark(
+      photo.id,
+      photo.displayWidth / photo.displayHeight,
+      value.template.watermark,
+      image ? image.width / image.height : 1,
     );
-    return $state.snapshot({
-      session: draftSession,
-      photos: editableItems.map((item) => item.photo),
-      coordinates: editableItems.flatMap((item) => (item.coordinate ? [item.coordinate] : [])),
-      overlays: editableItems.flatMap((item) => item.overlays),
-      exportConfigurations: editableItems.flatMap((item) =>
-        item.configuration ? [item.configuration] : [],
-      ),
-      exportResults,
-      batchInvalidItems: batchSession.items
-        .filter((item) => item.kind === 'invalid')
-        .map(({ id, sourceName, failureCode }) => ({ id, sourceName, failureCode })),
-      batchDecisions: editableItems.map((item) => ({
-        photoId: item.id,
-        decision: item.decision,
-      })),
-    }) as DraftSnapshot;
+    if (!arrangement) return undefined;
+    return {
+      config: value.template.watermark,
+      arrangement: resolveWatermarkArrangement(arrangement, watermarkArrangement),
+      assets: watermarkAssets,
+    };
   }
-
-  function scheduleCurrentDraft(touch = true): void {
-    if (!draftSession) return;
-    if (touch) draftSession = editingSessionReducer(draftSession, { type: 'touch' });
-    const snapshot = currentDraftSnapshot();
-    if (!snapshot) return;
-    draftStatus = 'saving';
-    draftService.scheduleSave(snapshot);
-  }
-
-  async function refreshOfflineReadiness(): Promise<void> {
-    if (!('serviceWorker' in navigator)) return;
-    offlineReadiness = await establishOfflineReadiness({
-      isSecureContext: window.isSecureContext,
-      requestWorkerReport: () => requestWorkerReadiness(navigator.serviceWorker),
-      openDatabase: async () => {
-        const database = await openDraftDatabase();
-        database.close();
-      },
-    });
-  }
-
-  async function findRecoverableDraft(): Promise<void> {
-    const result = await draftService.restoreLatest();
+  async function chooseWatermark(file: File): Promise<void> {
+    const id = photo?.id,
+      revision = pending?.baseRevision,
+      transaction = pending;
+    const result = await importWatermark(file);
+    if (
+      !pending ||
+      pending !== transaction ||
+      photo?.id !== id ||
+      pending.baseRevision !== revision ||
+      view !== 'watermark'
+    )
+      return;
     if (!result.ok) {
-      if (result.error.code === 'not-found') return;
-      draftStatus = 'error';
-      draftRecoveryIssue =
-        result.error.code === 'incompatible-version'
-          ? t.incompatibleDraftRecovery
-          : t.failedDraftRecovery;
+      error = 'PNG 浮水印無法讀取，請檢查格式、尺寸與檔案大小。';
       return;
     }
-    draftRecoveryIssue = '';
-    recoverableDraft = result.value;
-    draftRecoveryOpen = true;
+    watermarkAssets = [
+      ...watermarkAssets.filter((asset) => asset.id === settings.template.watermark.assetId),
+      result.value,
+    ];
+    pending.value.template = {
+      ...pending.value.template,
+      watermark: {
+        ...pending.value.template.watermark,
+        kind: 'image',
+        mode: 'single',
+        assetId: result.value.id,
+      },
+    };
   }
-
-  async function loadInitialLocalState(): Promise<void> {
-    try {
-      const sharedFiles = await consumeSharedFiles();
-      if (sharedFiles.length > 0) {
-        await handleFiles(sharedFiles);
+  async function selectTemplate(template: AnnotationTemplate): Promise<void> {
+    if (!pending) return;
+    const request = ++templateRequest,
+      transaction = pending;
+    const result = applyTemplate(template, $state.snapshot(pending.value));
+    if (!result) {
+      error = '樣板資料無法讀取。';
+      return;
+    }
+    if (template.watermark.kind === 'image' && template.watermark.assetId) {
+      const asset = await preferences.getAsset(template.watermark.assetId);
+      if (request !== templateRequest || pending !== transaction) return;
+      if (!asset.ok) {
+        error = '樣板 PNG 無法讀取，請重新選取圖片。';
         return;
       }
-    } catch {
-      draftStatus = 'error';
-      draftRecoveryIssue = t.failedDraftRecovery;
+      watermarkAssets = [
+        ...watermarkAssets.filter((item) => item.id !== asset.value.id),
+        asset.value,
+      ];
+    }
+    if (request === templateRequest && pending === transaction) pending.value = result;
+  }
+  async function saveTemplate(name: string): Promise<void> {
+    if (!pending) return;
+    const transaction = pending;
+    const template = sanitizeTemplate({
+      ...$state.snapshot(pending.value.template),
+      id: crypto.randomUUID(),
+      name,
+    });
+    if (!template) {
+      error = '請檢查樣板名稱與設定。';
       return;
     }
-    await findRecoverableDraft();
+    const result = await preferences.saveTemplate(template, $state.snapshot(watermarkAssets));
+    if (!result.ok) {
+      error = '樣板儲存失敗，請重試。';
+      return;
+    }
+    templateItems = [...templateItems, template];
+    error = '';
+    message = '已儲存樣板';
+    if (pending === transaction) pending.value.template = template;
   }
-
-  onMount(() => {
-    mapConsent = readMapConsent(localStorage);
-    isOnline = navigator.onLine;
-    installedApp = window.matchMedia('(display-mode: standalone)').matches;
-    void refreshOfflineReadiness();
-    void loadInitialLocalState();
-    const handleOnline = () => (isOnline = true);
-    const handleOffline = () => (isOnline = false);
-    const flushDraft = () => void draftService.flush();
-    const flushHiddenDraft = () => {
-      if (document.visibilityState === 'hidden') flushDraft();
-    };
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    window.addEventListener('pointerup', flushDraft);
-    document.addEventListener('visibilitychange', flushHiddenDraft);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-      window.removeEventListener('pointerup', flushDraft);
-      document.removeEventListener('visibilitychange', flushHiddenDraft);
-    };
-  });
-
-  onDestroy(() => {
-    revokePhotoUrl();
-    draftService.dispose();
-    draftRepository.close();
-  });
-
-  function outputNameFor(source: SourcePhoto): string {
-    const dot = source.sourceName.lastIndexOf('.');
-    const stem = dot > 0 ? source.sourceName.slice(0, dot) : source.sourceName;
-    return `${stem}-annotated${source.sourceMime === 'image/png' ? '.png' : '.jpg'}`;
+  async function setDefaultTemplate(id: string): Promise<void> {
+    const result = await preferences.setDefaultTemplate(id);
+    if (result.ok) {
+      defaultTemplateId = id;
+      message = '已設定新照片預設樣板';
+    } else error = '預設樣板儲存失敗，請重試。';
   }
-
+  function snapshot(): DraftSnapshot | null {
+    if (!photo || !session) return null;
+    return $state.snapshot({
+      session,
+      photos: [photo],
+      coordinates: settings.coordinate ? [settings.coordinate] : [],
+      overlays,
+      editorTemplate: settings.template,
+      cornerTexts: settings.texts,
+      exportConfigurations: config ? [config] : [],
+      watermarkConfigs: [settings.template.watermark],
+      watermarkArrangements: watermarkArrangement ? [watermarkArrangement] : [],
+    });
+  }
+  function saveDraft(touch = true): void {
+    if (!session) return;
+    if (touch) session = editingSessionReducer(session, { type: 'touch' });
+    const value = snapshot();
+    if (!value) return;
+    saved = '儲存中…';
+    const assets = $state.snapshot(watermarkAssets);
+    saveTail = saveTail
+      .then(async () => {
+        const result = await drafts.save(value, assets);
+        if (session?.id !== value.session.id || session.revision !== value.session.revision) return;
+        saved = result.ok ? '已自動儲存草稿' : '草稿未儲存';
+        if (!result.ok) error = '無法儲存草稿，請保留此頁並重試；仍可匯出目前照片。';
+      })
+      .catch(() => {
+        saved = '草稿未儲存';
+      });
+  }
+  function openSettings(next: EditorView): void {
+    if (!photo || !session) return;
+    pending = beginSettings(photo.id, session.revision, $state.snapshot(settings));
+    view = next;
+    colorValid = true;
+    error = '';
+    message = '';
+    locationCandidate = null;
+    latitude = settings.coordinate?.latitude.toString() ?? '';
+    longitude = settings.coordinate?.longitude.toString() ?? '';
+  }
+  function cancelSettings(): void {
+    templateRequest++;
+    locationRequest++;
+    locating = false;
+    consentOpen = false;
+    locationCandidate = null;
+    pending = null;
+    view = 'editor';
+    error = '';
+  }
+  function applySettings(): void {
+    if (!pending || !photo || !session) return;
+    if (!colorValid) {
+      error = '請先修正色彩欄位。';
+      return;
+    }
+    const value = commitSettings($state.snapshot(pending), photo.id, session.revision);
+    if (!value) {
+      error = '照片已變更，請重新開啟設定。';
+      return;
+    }
+    const clean = sanitizeTemplate(value.template);
+    if (!clean) {
+      error = '樣式或浮水印設定無效，請檢查輸入。';
+      return;
+    }
+    value.template = clean;
+    const placed = buildOverlays(value);
+    if (!placed) {
+      error = '文字超出照片範圍或座標格式無法表示此位置，請縮短文字、縮小字級或調整格式。';
+      return;
+    }
+    const layer = watermarkLayer(value);
+    if (
+      value.template.watermark.enabled &&
+      (!layer ||
+        (value.template.watermark.kind === 'image' &&
+          !watermarkAssets.some((asset) => asset.id === value.template.watermark.assetId)))
+    ) {
+      error = '浮水印無法排列或缺少 PNG，請縮短文字、降低密度或重新選取圖片。';
+      return;
+    }
+    watermarkArrangement = layer?.arrangement ?? null;
+    settings = value;
+    error = '';
+    overlays = placed;
+    pending = null;
+    view = 'editor';
+    saveDraft();
+  }
+  function chooseCoordinate(
+    lat: number,
+    lng: number,
+    provenance: 'MANUAL_INPUT' | 'MAP_SELECTION',
+  ): void {
+    if (!photo || !pending) return;
+    const result = replaceWorkingCoordinate(pending.value.coordinate, {
+      id: crypto.randomUUID(),
+      photoId: photo.id,
+      latitude: lat,
+      longitude: lng,
+      provenance,
+      inputFormat: 'WGS84_DD',
+      displayFormat: pending.value.template.coordinateFormat,
+      zone: pending.value.template.zone,
+      precision: pending.value.template.precision,
+    });
+    if (!result.ok) {
+      error = '請輸入有效經緯度：緯度 −90～90、經度 −180～180。';
+      return;
+    }
+    pending.value.coordinate = result.value;
+    applySettings();
+  }
+  function requestMap(): void {
+    if (mapConsented) view = 'map';
+    else consentOpen = true;
+  }
+  async function locate(): Promise<void> {
+    if (!photo || !pending || !navigator.geolocation) {
+      error = '此裝置無法提供位置，請使用手動輸入或地圖。';
+      return;
+    }
+    const request = ++locationRequest,
+      photoId = photo.id;
+    locating = true;
+    error = '';
+    locationCandidate = null;
+    const result = await requestCurrentLocation(navigator.geolocation, {
+      id: crypto.randomUUID(),
+      photoId,
+      maxAccuracyMeters: Number.MAX_VALUE,
+    });
+    if (request !== locationRequest || !pending || photo?.id !== photoId) return;
+    locating = false;
+    if (result.ok) locationCandidate = result.value;
+    else error = '無法取得目前位置，請檢查定位權限或改用手動輸入。';
+  }
   function defaultConfiguration(source: SourcePhoto): ExportConfiguration {
+    const stem = source.sourceName.replace(/\.[^.]+$/, '');
     return {
       photoId: source.id,
       format: source.sourceMime,
@@ -461,1385 +447,701 @@
       metadataMode: 'preserveSupported',
       orientationMode: 'preserveRaw',
       fallback: null,
-      outputName: outputNameFor(source),
+      outputName: `${stem}-annotated.${source.sourceMime === 'image/png' ? 'png' : 'jpg'}`,
       saveMethod: 'download',
     };
   }
-
-  function acceptedCoordinateFor(
-    source: SourcePhoto,
-    previous: CoordinateRecord | null,
-    value: Wgs84Coordinate,
-    provenance: 'CAPTURE_METADATA' | 'MANUAL_INPUT',
-  ): CoordinateRecord | null {
-    const result = replaceWorkingCoordinate(previous, {
-      id: nextId('coordinate'),
-      photoId: source.id,
-      latitude: value.latitude,
-      longitude: value.longitude,
-      provenance,
-      inputFormat: 'WGS84_DD',
-      displayFormat: 'WGS84_DD',
-    });
-    return result.ok ? result.value : null;
-  }
-
-  function coordinateText(
-    value: CoordinateRecord,
-    displayFormat: CoordinateDisplayFormat = value.displayFormat,
-  ): string {
-    const label =
-      value.provenance === 'CAPTURE_METADATA'
-        ? t.captureMetadata
-        : value.provenance === 'CURRENT_GPS'
-          ? t.currentGps
-          : t.manualInput;
-    return formatCoordinateOverlay(value, label, displayFormat);
-  }
-
-  function syncCoordinateOverlays(
-    value: CoordinateRecord,
-    formats = coordinateFormats.length > 0 ? coordinateFormats : [value.displayFormat],
-    corner = coordinateCorner,
-  ): boolean {
-    if (
-      formats.some(
-        (format) =>
-          !formatCoordinate(value, format, {
-            zone: value.zone,
-            precision: value.precision,
-          }).ok,
-      )
-    ) {
-      manualError = t.displayFormatUnavailable;
-      return false;
-    }
-
-    const nonCoordinate = overlays.filter((overlay) => overlay.role !== 'coordinate');
-    const existingByFormat: Partial<Record<CoordinateDisplayFormat, TextOverlay>> = {};
-    for (const overlay of overlays.filter((item) => item.role === 'coordinate')) {
-      existingByFormat[overlay.coordinateFormat ?? value.displayFormat] = overlay;
-    }
-    const placed: TextOverlay[] = [];
-    for (const format of formats) {
-      const existing = existingByFormat[format];
-      const candidate = existing ?? {
-        x: 0,
-        y: 0,
-        width: 0.44,
-        height: 0.075,
-      };
-      const placement = findCornerPlacement(candidate, [...nonCoordinate, ...placed], corner);
-      if (!placement) {
-        statusMessage = t.overlayPlacementUnavailable;
-        return false;
-      }
-      placed.push(
-        createOverlay({
-          ...(existing ?? {
-            id: nextId('overlay'),
-            photoId: value.photoId,
-            role: 'coordinate' as const,
-            fontFamily: 'Noto Sans TC',
-            fontSize: 0.032,
-            textColor: '#ffffff',
-            backgroundColor: '#111827',
-            order: nonCoordinate.length + placed.length,
-          }),
-          ...placement,
-          content: coordinateText(value, format),
-          coordinateFormat: format,
-          placementCorner: corner,
-        }),
-      );
-    }
-    overlays = [...nonCoordinate, ...placed].map((overlay, order) => ({ ...overlay, order }));
-    if (selectedOverlayId && !overlays.some((overlay) => overlay.id === selectedOverlayId)) {
-      selectedOverlayId = placed[0]?.id ?? nonCoordinate[0]?.id ?? null;
-    }
-    manualError = '';
-    return true;
-  }
-
-  function coordinateOverlayFor(value: CoordinateRecord, order = 0): TextOverlay {
-    return createOverlay({
-      id: nextId('overlay'),
-      photoId: value.photoId,
-      role: 'coordinate',
-      content: coordinateText(value, value.displayFormat),
-      fontFamily: 'Noto Sans TC',
-      fontSize: 0.032,
-      textColor: '#ffffff',
-      backgroundColor: '#111827',
-      x: 0.03,
-      y: 0.895,
-      width: 0.44,
-      height: 0.075,
-      order,
-      coordinateFormat: value.displayFormat,
-      placementCorner: 'bottom-left',
-    });
-  }
-
-  async function handleFiles(files: FileList | readonly File[]): Promise<void> {
-    if (files.length === 0) return;
-    viewState = 'loading';
-    statusMessage = `${t.importProgress} ${files.length} item(s)`;
-    errorMessage = '';
-    const sessionId = nextId('session');
-    const photos: SourcePhoto[] = [];
-    const invalidItems: InvalidBatchIntake[] = [];
-    const coordinates: CoordinateRecord[] = [];
-    const importedOverlays: TextOverlay[] = [];
-    const configurations: ExportConfiguration[] = [];
-
-    for (const selected of Array.from(files)) {
-      statusMessage = `${t.importProgress} ${selected.name}`;
-      const result = await importPhoto(selected, {
-        id: nextId('photo'),
-        sessionId,
-      });
+  async function handleFile(file: File | undefined): Promise<void> {
+    if (!file) return;
+    locationRequest++;
+    locating = false;
+    locationCandidate = null;
+    const generation = ++importGeneration;
+    loading = true;
+    error = '';
+    const id = crypto.randomUUID();
+    try {
+      const result = await importPhoto(file, { id: crypto.randomUUID(), sessionId: id });
+      if (generation !== importGeneration) return;
       if (!result.ok) {
-        invalidItems.push({
-          id: nextId('invalid'),
-          sourceName: selected.name,
-          failureCode: result.error.code,
-        });
-        continue;
+        error = '無法讀取這張照片。請選取支援範圍內的 JPEG 或 PNG。';
+        return;
       }
-      if (photos.length >= 20) {
-        invalidItems.push({
-          id: nextId('invalid'),
-          sourceName: selected.name,
-          failureCode: 'over-limit',
-        });
-        continue;
-      }
-      photos.push(result.value);
-      configurations.push(defaultConfiguration(result.value));
-      const captureCoordinate = result.value.metadataSummary.captureGps
-        ? acceptedCoordinateFor(
-            result.value,
-            null,
-            result.value.metadataSummary.captureGps,
-            'CAPTURE_METADATA',
-          )
+      await ensureEditorFont();
+      const defaults = await preferences.loadPreferences();
+      const templates = await preferences.listTemplates();
+      if (generation !== importGeneration) return;
+      await saveTail;
+      if (generation !== importGeneration) return;
+      templateItems = [...builtinTemplates, ...(templates.ok ? templates.value : [])];
+      defaultTemplateId = defaults.ok ? (defaults.value.defaultTemplateId ?? 'outdoor') : 'outdoor';
+      photo = result.value;
+      session = editingSessionReducer(createEditingSession({ id, photoIds: [photo.id] }), {
+        type: 'transition',
+        status: 'editing',
+      });
+      const template =
+        defaults.ok && templates.ok
+          ? (templateItems.find((item) => item.id === defaults.value.defaultTemplateId) ??
+            defaultTemplate)
+          : defaultTemplate;
+      if (
+        defaults.ok &&
+        defaults.value.defaultTemplateId &&
+        !templateItems.some((item) => item.id === defaults.value.defaultTemplateId)
+      )
+        error = '預設樣板已不存在，已使用內建樣板。';
+      const gps = photo.metadataSummary.captureGps;
+      const coordinate = gps
+        ? replaceWorkingCoordinate(null, {
+            id: crypto.randomUUID(),
+            photoId: photo.id,
+            ...gps,
+            provenance: 'CAPTURE_METADATA',
+            inputFormat: 'WGS84_DD',
+            displayFormat: template.coordinateFormat,
+          })
         : null;
-      if (captureCoordinate) {
-        coordinates.push(captureCoordinate);
-        importedOverlays.push(coordinateOverlayFor(captureCoordinate));
+      settings = {
+        template: structuredClone(template),
+        texts: defaults.ok ? defaults.value.cornerTexts : emptyCornerTexts(),
+        coordinate: coordinate?.ok ? coordinate.value : null,
+      };
+      watermarkAssets = [];
+      if (template.watermark.kind === 'image' && template.watermark.assetId) {
+        const asset = await preferences.getAsset(template.watermark.assetId);
+        if (generation !== importGeneration) return;
+        if (asset.ok) watermarkAssets = [asset.value];
+        else {
+          settings.template = structuredClone(defaultTemplate);
+          error = '樣板 PNG 無法讀取，已使用內建樣板。';
+        }
       }
+      watermarkArrangement = null;
+      watermarkArrangement = watermarkLayer(settings)?.arrangement ?? null;
+      config = defaultConfiguration(photo);
+      overlays = buildOverlays(settings) ?? [];
+      pending = null;
+      view = 'editor';
+      if (previewUrl && previewUrl !== sourceUrl) URL.revokeObjectURL(previewUrl);
+      if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+      sourceUrl = URL.createObjectURL(photo.sourceBlob);
+      previewUrl = sourceUrl;
+      recovery = null;
+      saveDraft(false);
+      if (!defaults.ok || !templates.ok) error = '無法讀取儲存的設定，已使用內建樣板。';
+    } catch {
+      if (generation === importGeneration) error = '讀取照片失敗，請重試。';
+    } finally {
+      if (generation === importGeneration) loading = false;
     }
-
-    if (photos.length === 0) {
-      viewState = 'error';
-      errorMessage = invalidItems[0]
-        ? sanitizeDiagnostic(invalidItems[0].failureCode).message
-        : t.photoImportFailed;
-      statusMessage = t.photoImportFailed;
+  }
+  async function restoreDraft(): Promise<void> {
+    if (!recovery || !recovery.photos[0]) return;
+    locationRequest++;
+    locating = false;
+    locationCandidate = null;
+    const generation = ++importGeneration,
+      draft = $state.snapshot(recovery);
+    const template = sanitizeTemplate(draft.editorTemplate ?? defaultTemplate);
+    if (!template) {
+      error = '草稿樣板資料無法讀取。';
       return;
     }
-
-    let storageHeadroomBytes: number | undefined;
+    let assets: WatermarkAsset[] = [];
+    if (template.watermark.kind === 'image' && template.watermark.assetId) {
+      const asset = await preferences.getAsset(template.watermark.assetId);
+      if (generation !== importGeneration) return;
+      if (!asset.ok) {
+        error = 'PNG 浮水印無法還原，請重新選取。';
+        return;
+      }
+      assets = [asset.value];
+    }
+    const storedTemplates = await preferences.listTemplates(),
+      defaults = await preferences.loadPreferences();
+    if (generation !== importGeneration) return;
+    templateItems = [...builtinTemplates, ...(storedTemplates.ok ? storedTemplates.value : [])];
+    defaultTemplateId = defaults.ok ? (defaults.value.defaultTemplateId ?? 'outdoor') : 'outdoor';
+    photo = draft.photos[0];
+    session = draft.session;
+    settings = {
+      template,
+      texts: draft.cornerTexts ?? emptyCornerTexts(),
+      coordinate: draft.coordinates?.[0] ?? null,
+    };
+    watermarkAssets = assets;
+    watermarkArrangement = draft.watermarkArrangements?.[0] ?? null;
+    watermarkArrangement = watermarkLayer(settings)?.arrangement ?? null;
+    config = draft.exportConfigurations?.[0] ?? defaultConfiguration(photo);
+    overlays = [...(draft.overlays ?? [])];
+    pending = null;
+    if (previewUrl && previewUrl !== sourceUrl) URL.revokeObjectURL(previewUrl);
+    if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+    sourceUrl = URL.createObjectURL(photo.sourceBlob);
+    previewUrl = sourceUrl;
+    recovery = null;
+    saved = '已還原草稿';
+    view = 'editor';
+  }
+  async function confirmExport(method: 'download' | 'share'): Promise<void> {
+    if (!photo || !config || exporting) return;
+    exporting = true;
+    error = '';
+    await saveTail;
     try {
-      const estimate = await navigator.storage?.estimate();
-      if (typeof estimate?.quota === 'number') {
-        storageHeadroomBytes = Math.max(0, estimate.quota - (estimate.usage ?? 0));
+      const result = await exportPhoto(
+        photo,
+        {
+          ...$state.snapshot(config),
+          saveMethod: method === 'share' ? 'webShare' : 'download',
+          overlays: $state.snapshot(overlays),
+          watermark: $state.snapshot(watermarkLayer(settings)),
+        },
+        { renderPhoto: (source, options) => renderer.render(source, options) },
+      );
+      if (result.ok && result.value.status === 'handedOff') {
+        message = result.value.saveMethod === 'download' ? '下載已開始' : '已交由系統分享';
+        view = 'exportResult';
+      } else {
+        error =
+          result.ok && result.value.status === 'cancelled'
+            ? '已取消分享，照片與草稿仍保留。'
+            : '匯出失敗，請重試或改用下載。';
       }
     } catch {
-      storageHeadroomBytes = undefined;
+      error = '匯出失敗，請重試。';
+    } finally {
+      exporting = false;
     }
-    const createdBatch = createBatchSession({
-      id: sessionId,
-      photos,
-      invalidItems,
-      coordinates,
-      overlays: importedOverlays,
-      configurations,
-      storageHeadroomBytes,
-    });
-    if (!createdBatch.ok) {
-      viewState = 'error';
-      errorMessage = createdBatch.error.message;
-      statusMessage = t.photoImportFailed;
-      return;
-    }
-
-    batchSession = createdBatch.value;
-    outputName = '';
-    exportResults = [];
-    viewState = 'editing';
-    statusMessage = `${photos.length} ${t.batchImportPhotosSuffix} ${invalidItems.length} ${t.batchImportInvalidSuffix}`;
-    draftSession = editingSessionReducer(
-      createEditingSession({ id: sessionId, photoIds: photos.map((item) => item.id) }),
-      { type: 'transition', status: 'editing' },
-    );
-    loadBatchItem(createdBatch.value.activeItemId, false);
-    scheduleCurrentDraft(false);
   }
-
-  function loadBatchItem(itemId: string, saveCurrent = true): void {
-    if (!batchSession) return;
-    if (saveCurrent) syncActiveBatchItem();
-    const selectedSession = selectBatchItem(batchSession, itemId);
-    const item = selectedSession.items.find(
-      (candidate): candidate is EditableBatchItem =>
-        candidate.kind === 'editable' && candidate.id === itemId,
-    );
-    if (!item || !item.configuration) return;
-    batchSession = selectedSession;
-    revokePhotoUrl();
-    photo = item.photo;
-    photoUrl = URL.createObjectURL(item.photo.sourceBlob);
-    coordinate = item.coordinate;
-    overlays = [...item.overlays];
-    selectedOverlayId = overlays[0]?.id ?? null;
-    const coordinateOverlays = overlays.filter((overlay) => overlay.role === 'coordinate');
-    coordinateFormats = [
-      ...new Set(
-        coordinateOverlays.map(
-          (overlay) => overlay.coordinateFormat ?? item.coordinate?.displayFormat ?? 'WGS84_DD',
-        ),
-      ),
-    ];
-    coordinateSelectionMode = coordinateFormats.length > 1 ? 'multiple' : 'single';
-    coordinateCorner = coordinateOverlays[0]?.placementCorner ?? 'bottom-left';
-    textCorner =
-      overlays.find((overlay) => overlay.role !== 'coordinate')?.placementCorner ?? 'top-right';
-    configuration = item.configuration;
-    manualError = '';
-    locationError = '';
-    activeStep = 'coordinate';
-    if (draftSession) {
-      draftSession = editingSessionReducer(draftSession, {
-        type: 'set-active-photo',
-        photoId: item.id,
-      });
-    }
-    if (saveCurrent) scheduleCurrentDraft();
-  }
-
-  function resumeRecoveredDraft(): void {
-    const snapshot = recoverableDraft;
-    if (!snapshot || snapshot.photos.length === 0) return;
-    const restored = createBatchSession({
-      id: snapshot.session.id,
-      photos: snapshot.photos,
-      invalidItems: snapshot.batchInvalidItems,
-      coordinates: snapshot.coordinates,
-      overlays: snapshot.overlays,
-      configurations: snapshot.exportConfigurations,
-    });
-    if (!restored.ok) {
-      draftStatus = 'error';
-      return;
-    }
-    let restoredBatch = selectBatchItem(restored.value, snapshot.session.activePhotoId);
-    for (const entry of snapshot.batchDecisions ?? []) {
-      restoredBatch = setBatchItemDecision(restoredBatch, entry.photoId, entry.decision);
-    }
-    batchSession = restoredBatch;
-    exportResults = [...(snapshot.exportResults ?? [])];
-    draftSession = snapshot.session;
-    loadBatchItem(restoredBatch.activeItemId, false);
-    draftStatus = 'saved';
-    viewState = 'editing';
-    activeStep = 'coordinate';
-    draftRecoveryOpen = false;
-    statusMessage = t.localDraftRestored;
-  }
-
-  async function discardRecoveredDraft(): Promise<void> {
-    if (!recoverableDraft) return;
-    const result = await draftService.discard(recoverableDraft.session.id);
-    if (!result.ok) {
-      draftStatus = 'error';
-      return;
-    }
-    recoverableDraft = null;
-    draftRecoveryOpen = false;
-    draftStatus = 'idle';
-  }
-
-  function handleManualCoordinate(value: ParsedCoordinate): void {
-    if (!photo) return;
-    const result = replaceWorkingCoordinate(coordinate, {
-      id: nextId('coordinate'),
-      photoId: photo.id,
-      latitude: value.latitude,
-      longitude: value.longitude,
-      provenance: 'MANUAL_INPUT',
-      inputFormat: value.inputFormat,
-      displayFormat: value.displayFormat,
-      zone: value.zone,
-      zoneAutoResolved: value.zoneAutoResolved,
-      precision: value.precision,
-    });
-    if (!result.ok) {
-      manualError = t.validWgs84;
-      return;
-    }
-    coordinate = result.value;
-    const nextFormats =
-      coordinateFormats.length > 0 ? coordinateFormats : [result.value.displayFormat];
-    manualError = '';
-    if (syncCoordinateOverlays(result.value, nextFormats)) coordinateFormats = nextFormats;
-    statusMessage = t.manualWorkingCoordinateAccepted;
-    scheduleCurrentDraft();
-  }
-
-  function handleDisplayChange(selection: {
-    format: CoordinateRecord['displayFormat'];
-    precision: number | null;
-  }): void {
-    if (!coordinate) return;
-    const result = formatCoordinate(coordinate, selection.format, {
-      zone: coordinate.zone,
-      precision: selection.precision,
-    });
-    if (!result.ok) {
-      manualError = t.displayFormatUnavailable;
-      return;
-    }
-    const previousDisplayFormat = coordinate.displayFormat;
-    const nextCoordinate = {
-      ...coordinate,
-      displayFormat: selection.format,
-      zone: coordinate.zoneAutoResolved ? coordinate.zone : result.value.zone,
-      zoneAutoResolved: coordinate.zoneAutoResolved,
-      precision: result.value.precision,
-      coverageStatus: result.value.coverageStatus,
-    };
-    const nextFormats =
-      coordinateSelectionMode === 'single'
-        ? [selection.format]
-        : [
-            ...new Set(
-              (coordinateFormats.length > 0 ? coordinateFormats : [previousDisplayFormat]).map(
-                (format) => (format === previousDisplayFormat ? selection.format : format),
-              ),
-            ),
-          ];
-    if (!syncCoordinateOverlays(nextCoordinate, nextFormats)) return;
-    coordinate = nextCoordinate;
-    coordinateFormats = nextFormats;
-    manualError = '';
-    statusMessage = t.displayFormatUpdated;
-    scheduleCurrentDraft();
-  }
-
-  function requestMapPreview(): void {
-    if (!coordinateReady || !coordinate) return;
-    if (mapConsent.status === 'granted') {
-      mapPreviewOpen = true;
-      return;
-    }
-    mapConsentOpen = true;
-  }
-
-  function acceptMapConsent(): void {
-    mapConsent = grantMapConsent(localStorage);
-    mapConsentOpen = false;
-    mapPreviewOpen = true;
-  }
-
-  function revokeMapNetworkConsent(): void {
-    mapConsent = revokeMapConsent(localStorage);
-    mapPreviewOpen = false;
-    statusMessage = t.mapConsentRevokedMessage;
-  }
-
-  async function handleCurrentLocation(): Promise<void> {
-    if (!photo || !navigator.geolocation) {
-      locationError = t.currentLocationUnavailable;
-      return;
-    }
-    locationError = '';
-    const result = await requestCurrentLocation(navigator.geolocation, {
-      id: nextId('coordinate'),
-      photoId: photo.id,
-      maxAccuracyMeters: 50,
-    });
-    if (!result.ok) {
-      locationError =
-        result.error.code === 'accuracy-insufficient'
-          ? t.locationAccuracyInsufficient
-          : t.currentLocationRejected;
-      return;
-    }
-    coordinate = result.value;
-    const nextFormats =
-      coordinateFormats.length > 0 ? coordinateFormats : [result.value.displayFormat];
-    if (syncCoordinateOverlays(result.value, nextFormats)) coordinateFormats = nextFormats;
-    statusMessage = `${t.currentGps} accepted with ${result.value.accuracyMeters} ${t.metresSuffix} ${t.currentGpsAccuracySuffix}`;
-    scheduleCurrentDraft();
-  }
-
-  function addOverlay(role: OverlayRole): void {
-    if (!photo) return;
-    const defaults: Record<OverlayRole, string> = {
-      title: t.photoTitle,
-      team: t.team,
-      coordinate: coordinate ? coordinateText(coordinate) : t.coordinate,
-      freeform: t.addYourNote,
-    };
-    const draft = createOverlay({
-      id: nextId('overlay'),
-      photoId: photo.id,
-      role,
-      content: defaults[role],
-      fontFamily: 'Noto Sans TC',
-      fontSize: role === 'title' ? 0.06 : 0.04,
-      textColor: '#ffffff',
-      backgroundColor: '#111827',
-      x: 0,
-      y: 0,
-      width: 0.44,
-      height: 0.1,
-      order: overlays.length,
-      placementCorner: textCorner,
-    });
-    const placement = findCornerPlacement(draft, overlays, textCorner);
-    if (!placement) {
-      statusMessage = t.overlayPlacementUnavailable;
-      return;
-    }
-    const overlay = updateOverlay(draft, placement);
-    overlays = [...overlays, overlay];
-    selectedOverlayId = overlay.id;
-    activeStep = 'text';
-    scheduleCurrentDraft();
-  }
-
-  function geometryChanged(update: Partial<TextOverlay>): boolean {
-    return ['x', 'y', 'width', 'height'].some((key) => key in update);
-  }
-
-  function applyOverlayUpdate(
-    overlayId: string,
-    update: Partial<TextOverlay>,
-    clearAutomaticCorner = false,
-  ): boolean {
-    const current = overlays.find((overlay) => overlay.id === overlayId);
-    if (!current) return false;
-    const proposed = updateOverlay(current, {
-      ...update,
-      ...(clearAutomaticCorner ? { placementCorner: undefined } : {}),
-    });
-    const others = overlays.filter((overlay) => overlay.id !== overlayId);
-    if (geometryChanged(update) && overlapsAny(proposed, others)) {
-      statusMessage = t.overlayOverlapPrevented;
-      return false;
-    }
-    overlays = overlays.map((overlay) => (overlay.id === overlayId ? proposed : overlay));
-    scheduleCurrentDraft();
-    return true;
-  }
-
-  function updateSelected(update: Partial<TextOverlay>): void {
-    if (!selectedOverlayId) return;
-    applyOverlayUpdate(selectedOverlayId, update, geometryChanged(update));
-  }
-
-  function updateById(overlayId: string, update: Partial<TextOverlay>): void {
-    selectedOverlayId = overlayId;
-    applyOverlayUpdate(overlayId, update, geometryChanged(update));
-  }
-
-  function moveSelected(dx: number, dy: number): void {
-    if (!selectedOverlayId) return;
-    const current = overlays.find((overlay) => overlay.id === selectedOverlayId);
-    if (!current) return;
-    const moved = moveOverlay(current, { dx, dy });
-    applyOverlayUpdate(selectedOverlayId, { x: moved.x, y: moved.y }, true);
-  }
-
-  function moveById(overlayId: string, dx: number, dy: number): void {
-    selectedOverlayId = overlayId;
-    const current = overlays.find((overlay) => overlay.id === overlayId);
-    if (!current) return;
-    const moved = moveOverlay(current, { dx, dy });
-    applyOverlayUpdate(overlayId, { x: moved.x, y: moved.y }, true);
-  }
-
-  function resizeSelected(dw: number, dh: number): void {
-    if (!selectedOverlayId) return;
-    const current = overlays.find((overlay) => overlay.id === selectedOverlayId);
-    if (!current) return;
-    const resized = resizeOverlay(current, { dw, dh });
-    applyOverlayUpdate(selectedOverlayId, { width: resized.width, height: resized.height }, true);
-  }
-
-  function changeTextCorner(corner: OverlayCorner): void {
-    const current = selectedOverlay?.role === 'coordinate' ? null : selectedOverlay;
-    if (!current) {
-      textCorner = corner;
-      return;
-    }
-    const placement = findCornerPlacement(
-      current,
-      overlays.filter((overlay) => overlay.id !== current.id),
-      corner,
-    );
-    if (!placement) {
-      statusMessage = t.overlayPlacementUnavailable;
-      return;
-    }
-    textCorner = corner;
-    applyOverlayUpdate(current.id, { ...placement, placementCorner: corner });
-  }
-
-  function changeCoordinateSelectionMode(mode: CoordinateSelectionMode): void {
-    const nextFormats =
-      mode === 'single'
-        ? [coordinateFormats[0] ?? coordinate?.displayFormat ?? 'WGS84_DD']
-        : coordinateFormats.length > 0
-          ? coordinateFormats
-          : [coordinate?.displayFormat ?? 'WGS84_DD'];
-    if (coordinate && !syncCoordinateOverlays(coordinate, nextFormats)) return;
-    coordinateSelectionMode = mode;
-    coordinateFormats = nextFormats;
-    scheduleCurrentDraft();
-  }
-
-  function toggleCoordinateFormat(format: CoordinateDisplayFormat): void {
-    const nextFormats =
-      coordinateSelectionMode === 'single'
-        ? [format]
-        : coordinateFormats.includes(format)
-          ? coordinateFormats.filter((item) => item !== format)
-          : [...coordinateFormats, format];
-    if (nextFormats.length === 0) {
-      statusMessage = t.keepOneCoordinateFormat;
-      return;
-    }
-    if (coordinate && !syncCoordinateOverlays(coordinate, nextFormats)) return;
-    coordinateFormats = nextFormats;
-    scheduleCurrentDraft();
-  }
-
-  function changeCoordinateCorner(corner: OverlayCorner): void {
-    if (coordinate && !syncCoordinateOverlays(coordinate, coordinateFormats, corner)) return;
-    coordinateCorner = corner;
-    scheduleCurrentDraft();
-  }
-
-  function removeSelected(): void {
-    if (!selectedOverlayId) return;
-    overlays = removeOverlay(overlays, selectedOverlayId);
-    selectedOverlayId = overlays[0]?.id ?? null;
-    scheduleCurrentDraft();
-  }
-
-  function removeOverlayById(overlayId: string): void {
-    overlays = removeOverlay(overlays, overlayId);
-    if (selectedOverlayId === overlayId) selectedOverlayId = overlays[0]?.id ?? null;
-    scheduleCurrentDraft();
-  }
-
-  function reorderOverlayById(overlayId: string, index: number): void {
-    overlays = reorderOverlays(overlays, overlayId, index);
-    scheduleCurrentDraft();
-  }
-
-  function updateConfiguration(update: Partial<ExportConfiguration>): void {
-    if (!configuration || !photo) return;
-    const next = { ...configuration, ...update };
-    const bakeUpright = next.format !== photo.sourceMime || next.metadataMode === 'removeSupported';
-    configuration = {
-      ...next,
-      width: bakeUpright ? photo.displayWidth : photo.rawWidth,
-      height: bakeUpright ? photo.displayHeight : photo.rawHeight,
-      quality: next.format === 'image/jpeg' ? (next.quality ?? 0.92) : null,
-      orientationMode: bakeUpright ? 'bakeUpright' : 'preserveRaw',
-      fallback:
-        next.format !== photo.sourceMime && next.metadataMode === 'preserveSupported'
-          ? {
-              code: 'format-change-metadata',
-              message: t.formatChangeMetadataFallback,
-              acknowledged: false,
-            }
-          : null,
-    };
-    scheduleCurrentDraft();
-  }
-
-  function applySharedSettings(value: SharedSettingsValue): void {
-    if (!batchSession) return;
-    syncActiveBatchItem();
-    const sharedOverlays = [
-      ...(value.title
-        ? [
-            {
-              role: 'title' as const,
-              content: value.title,
-              fontFamily: 'Noto Sans TC',
-              fontSize: 0.06,
-              textColor: '#ffffff',
-              backgroundColor: '#111827',
-              x: 0.53,
-              y: 0.03,
-              width: 0.44,
-              height: 0.1,
-              padding: 0.012,
-              lineHeight: 1.2,
-              order: 0,
-              contrastStatus: 'acceptable' as const,
-              placementCorner: 'top-right' as const,
-            },
-          ]
-        : []),
-      ...(value.team
-        ? [
-            {
-              role: 'team' as const,
-              content: value.team,
-              fontFamily: 'Noto Sans TC',
-              fontSize: 0.04,
-              textColor: '#ffffff',
-              backgroundColor: '#111827',
-              x: 0.53,
-              y: 0.14,
-              width: 0.44,
-              height: 0.09,
-              padding: 0.012,
-              lineHeight: 1.2,
-              order: value.title ? 1 : 0,
-              contrastStatus: 'acceptable' as const,
-              placementCorner: 'top-right' as const,
-            },
-          ]
-        : []),
-    ];
-    const candidateSession = applySharedBatchSettings(
-      batchSession,
-      {
-        displayFormat: value.displayFormat,
-        overlayTemplate: { overlays: sharedOverlays },
-      },
-      (photoId, index) => nextId(`${photoId}-shared-${index}`),
-    );
-    let placementFailed = false;
-    const placedItems = candidateSession.items.map((item) => {
-      if (item.kind !== 'editable' || !item.coordinate) return item;
-      const nonCoordinate = item.overlays.filter((overlay) => overlay.role !== 'coordinate');
-      const placedCoordinates: TextOverlay[] = [];
-      for (const overlay of item.overlays.filter((candidate) => candidate.role === 'coordinate')) {
-        const placement = findCornerPlacement(
-          overlay,
-          [...nonCoordinate, ...placedCoordinates],
-          overlay.placementCorner ?? 'bottom-left',
-        );
-        if (!placement) {
-          placementFailed = true;
-          return item;
-        }
-        placedCoordinates.push(
-          updateOverlay(overlay, {
-            ...placement,
-            content: coordinateText(
-              item.coordinate,
-              overlay.coordinateFormat ?? item.coordinate.displayFormat,
-            ),
-          }),
-        );
-      }
-      return {
-        ...item,
-        overlays: [...nonCoordinate, ...placedCoordinates].map((overlay, order) => ({
-          ...overlay,
-          order,
-        })),
-      };
-    });
-    if (placementFailed) {
-      statusMessage = t.overlayPlacementUnavailable;
-      return;
-    }
-    batchSession = { ...candidateSession, items: placedItems };
-    const currentStep = activeStep;
-    loadBatchItem(batchSession.activeItemId, false);
-    activeStep = currentStep;
-    statusMessage = t.sharedSettingsApplied;
-    scheduleCurrentDraft();
-  }
-
-  function decideBatchItem(itemId: string, decision: 'omit' | 'withoutCoordinate'): void {
-    if (!batchSession) return;
-    syncActiveBatchItem();
-    batchSession = setBatchItemDecision(batchSession, itemId, decision);
-    scheduleCurrentDraft();
-  }
-
-  function removeInvalidItem(itemId: string): void {
-    if (!batchSession) return;
-    batchSession = removeInvalidBatchItem(batchSession, itemId);
-    scheduleCurrentDraft();
-  }
-
-  async function openExportReview(): Promise<void> {
-    const snapshot = currentDraftSnapshot();
-    if (snapshot) {
-      draftStatus = 'saving';
-      await draftService.flush(snapshot);
-    }
-    if (isBatch) {
-      batchReviewOpen = true;
-      if (draftSession?.status === 'editing') {
-        draftSession = editingSessionReducer(draftSession, {
-          type: 'transition',
-          status: 'reviewing',
+  $effect(() => {
+    const source = photo;
+    const value = $state.snapshot(display);
+    if (!source) return;
+    const items = buildOverlays(value);
+    if (!items) return;
+    const generation = ++renderGeneration;
+    previewBusy = true;
+    const timer = setTimeout(() => {
+      void renderer
+        .render(source.sourceBlob, {
+          mode: 'preview',
+          orientation: source.orientation,
+          overlays: items,
+          watermark: $state.snapshot(watermarkLayer(value)),
+          outputFormat: 'image/png',
+          metadataMode: 'removeSupported',
+        })
+        .then((result) => {
+          if (generation !== renderGeneration) return;
+          previewBusy = false;
+          if (!result.ok) {
+            error = '預覽無法產生，請調整設定或重試。';
+            return;
+          }
+          if (previewUrl && previewUrl !== sourceUrl) URL.revokeObjectURL(previewUrl);
+          previewUrl = URL.createObjectURL(result.value.blob);
         });
-      }
-    } else {
-      reviewOpen = true;
-    }
-  }
-
-  function batchWorkItems(): BatchExportWorkItem[] {
-    syncActiveBatchItem();
-    if (!batchSession) return [];
-    return batchSession.items.flatMap((item) => {
-      if (item.kind !== 'editable' || !item.configuration) return [];
-      return [
-        {
-          photo: item.photo,
-          disposition: item.decision === 'omit' ? ('omit' as const) : ('export' as const),
-          overlays: item.overlays,
-          request: {
-            photoId: item.id,
-            format: item.configuration.format,
-            metadataMode: item.configuration.metadataMode,
-            quality: item.configuration.quality,
-            outputName: item.configuration.outputName,
-            saveMethod: 'download' as const,
-            fallback: item.configuration.fallback,
+    }, 80);
+    return () => {
+      clearTimeout(timer);
+      renderGeneration++;
+    };
+  });
+  onMount(() => {
+    let mounted = true;
+    mapConsented = readMapConsent(localStorage).status === 'granted';
+    online = navigator.onLine;
+    void (async () => {
+      const draft = await drafts.restoreLatest();
+      if (!mounted) return;
+      if (draft.ok && !photo) recovery = draft.value;
+      const shared = await consumeSharedFiles().catch(() => []);
+      if (mounted && shared[0]) await handleFile(shared[0]);
+      if ('serviceWorker' in navigator) {
+        const result = await establishOfflineReadiness({
+          isSecureContext: window.isSecureContext,
+          requestWorkerReport: () => requestWorkerReadiness(navigator.serviceWorker),
+          openDatabase: async () => {
+            const db = await openDraftDatabase();
+            db.close();
           },
-        },
-      ];
-    });
-  }
-
-  async function finishBatchExport(results: readonly ExportResult[]): Promise<void> {
-    if (!batchSession) return;
-    for (const result of results) {
-      applyBatchProgressResult(result);
-    }
-    const hasFailure = results.some(
-      (result) => result.status === 'failed' || result.status === 'cancelled',
-    );
-    if (!hasFailure) {
-      const handedOff = results.filter((result) => result.status === 'handedOff').length;
-      statusMessage = `${handedOff} ${t.batchOutputSuffix}`;
-      viewState = 'success';
-      if (draftSession?.status === 'exporting') {
-        draftSession = editingSessionReducer(draftSession, {
-          type: 'transition',
-          status: 'completed',
         });
+        if (mounted) ready = result.status === 'ready';
       }
-      if (draftSession) await draftService.cleanupAfterExport(draftSession.id);
-      draftSession = null;
-      draftStatus = 'idle';
-      return;
-    }
-    errorMessage = t.batchPartialFailure;
-    statusMessage = t.batchPartialStatus;
-    viewState = 'error';
-    if (draftSession?.status === 'exporting') {
-      draftSession = editingSessionReducer(draftSession, {
-        type: 'transition',
-        status: 'partiallyExported',
-      });
-    }
-    scheduleCurrentDraft();
-  }
-
-  function applyBatchProgressResult(result: ExportResult): void {
-    exportResults = [
-      ...exportResults.filter((existing) => existing.photoId !== result.photoId),
-      result,
-    ];
-    if (!batchSession) return;
-    const status =
-      result.status === 'handedOff'
-        ? 'exported'
-        : result.status === 'omitted'
-          ? 'omitted'
-          : result.status === 'failed'
-            ? 'failed'
-            : 'ready';
-    batchSession = updateBatchItem(batchSession, result.photoId, {
-      status,
-      failureCode: result.failureCode,
-    });
-  }
-
-  async function confirmBatchExport(): Promise<void> {
-    if (!batchSession || !batchExportReadiness(batchSession).ready) return;
-    batchReviewOpen = false;
-    viewState = 'exporting';
-    const workItems = batchWorkItems();
-    batchTotal = workItems.length;
-    if (draftSession?.status === 'reviewing') {
-      draftSession = editingSessionReducer(draftSession, {
-        type: 'transition',
-        status: 'exporting',
-      });
-    }
-    if (draftSession) {
-      draftSession = editingSessionReducer(draftSession, { type: 'touch' });
-      const exportingSnapshot = currentDraftSnapshot();
-      if (exportingSnapshot) await draftService.flush(exportingSnapshot);
-    }
-    const results = await exportBatchSequentially(workItems, {
-      onProgress: async (completed, _total, result) => {
-        applyBatchProgressResult(result);
-        if (draftSession) {
-          draftSession = editingSessionReducer(draftSession, { type: 'touch' });
-          const checkpoint = currentDraftSnapshot();
-          if (checkpoint) {
-            draftStatus = 'saving';
-            await draftService.flush(checkpoint);
-          }
-        }
-        statusMessage = `${t.exportingBatch} ${completed} ${t.ofLabel} ${batchTotal}…`;
-      },
-    });
-    await finishBatchExport(results);
-  }
-
-  async function retryFailedBatch(): Promise<void> {
-    const workItems = batchWorkItems();
-    viewState = 'exporting';
-    if (draftSession?.status === 'partiallyExported') {
-      draftSession = editingSessionReducer(draftSession, {
-        type: 'transition',
-        status: 'exporting',
-      });
-    }
-    batchTotal = exportResults.filter((result) => result.status === 'failed').length;
-    const results = await retryFailedBatchExports(workItems, exportResults, {
-      onProgress: async (completed, _total, result) => {
-        applyBatchProgressResult(result);
-        if (draftSession) {
-          draftSession = editingSessionReducer(draftSession, { type: 'touch' });
-          const checkpoint = currentDraftSnapshot();
-          if (checkpoint) {
-            draftStatus = 'saving';
-            await draftService.flush(checkpoint);
-          }
-        }
-        statusMessage = `${t.retryingBatch} ${completed} ${t.ofLabel} ${batchTotal} ${t.failedItemsSuffix}`;
-      },
-    });
-    await finishBatchExport(results);
-  }
-
-  async function confirmExport(): Promise<void> {
-    if (!photo || !configuration || !canReview) return;
-    reviewOpen = false;
-    viewState = 'exporting';
-    statusMessage = t.renderingExport;
-    const result = await exportPhoto(photo, {
-      photoId: photo.id,
-      format: configuration.format,
-      metadataMode: configuration.metadataMode,
-      quality: configuration.quality,
-      outputName: configuration.outputName,
-      saveMethod: 'download',
-      fallback: configuration.fallback,
-      overlays,
-    });
-    if (result.ok) exportResults = [result.value];
-    if (result.ok && result.value.status === 'handedOff') {
-      outputName = result.value.outputName ?? configuration.outputName;
-      statusMessage = `${t.exportSuccessPrefix} ${outputName} ${t.exportSuccessSuffix}`;
-      viewState = 'success';
-      if (draftSession) await draftService.cleanupAfterExport(draftSession.id);
-      draftSession = null;
-      draftStatus = 'idle';
-      return;
-    }
-    errorMessage = result.ok
-      ? `${t.exportFailedPrefix} (${result.value.failureCode ?? t.unknownFailure}). ${t.exportFailedTryAgain}`
-      : result.error.message;
-    statusMessage = t.exportFailed;
-    viewState = 'error';
-    scheduleCurrentDraft();
-  }
+    })();
+    return () => {
+      mounted = false;
+    };
+  });
+  onDestroy(() => {
+    locationRequest++;
+    importGeneration++;
+    renderGeneration++;
+    renderer.close();
+    drafts.close();
+    if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+    if (previewUrl && previewUrl !== sourceUrl) URL.revokeObjectURL(previewUrl);
+  });
 </script>
 
-<main class="workspace">
-  <header class="app-header">
-    <div>
-      <p class="eyebrow">{t.offlineLabel}</p>
-      <h1>{t.appName}</h1>
-    </div>
-    <span class="privacy">{t.localOnlyCore}</span>
-  </header>
-
-  <section class="application-status" aria-label={t.applicationStatus}>
-    <DraftStatus status={draftStatus} />
-    <details class="platform-status">
-      <summary>
-        {offlineReadiness.status === 'ready' ? t.offlineReady : t.offlineNotReady}
-        · {t.appStatusDetails}
-      </summary>
-      <div class="platform-status-content">
-        <OfflineStatus readiness={offlineReadiness} online={isOnline} />
-        {#if !installedApp}
-          <InstallHelp installed={installedApp} />
-        {/if}
+<svelte:window ononline={() => (online = true)} onoffline={() => (online = false)} />
+<EditorShell
+  {title}
+  subtitle={photo ? `${photo.sourceName} · ${saved}` : '讓每張照片，都有位置。'}
+  onBack={photo && view !== 'editor' && !exporting ? cancelSettings : undefined}
+>
+  <input
+    class="file-input"
+    bind:this={selectedFiles}
+    aria-label="選取照片"
+    type="file"
+    accept="image/jpeg,image/png"
+    disabled={loading || exporting}
+    onchange={(event) => handleFile(event.currentTarget.files?.[0])}
+  />
+  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if loading}<p role="status">正在讀取照片…</p>
+    <Button
+      variant="secondary"
+      onclick={() => {
+        importGeneration++;
+        loading = false;
+      }}>取消讀取</Button
+    >{/if}
+  {#if !photo}
+    <section class="welcome">
+      <span class="eyebrow">PHOTO MARKER</span>
+      <h2>選一張照片，<br />留下你的記錄。</h2>
+      <p>讀取照片 GPS，加上座標與文字。<br />照片留在此裝置，無須上傳。</p>
+    </section>
+    <Button disabled={loading} onclick={() => selectedFiles?.click()}>選取手機照片</Button>
+    <p class="muted">支援 JPEG、PNG · 保留原始照片</p>
+    {#if recovery}<section class="panel">
+        <h2>繼續上次的記錄</h2>
+        <p>{recovery.photos[0]?.sourceName}</p>
+        <Button onclick={restoreDraft}>還原草稿</Button>
+      </section>{/if}
+  {:else}
+    {#if view !== 'map'}<div class="photo" aria-busy={previewBusy}>
+        <img src={previewUrl || sourceUrl} alt="照片預覽" />
+      </div>{/if}
+    {#if view === 'editor'}
+      <section class="panel">
+        <strong>{settings.coordinate ? '已取得照片位置' : '這張照片沒有 GPS'}</strong>
+        <p>
+          {coordinateSummary()}
+        </p>
+        <small
+          >{settings.coordinate ? `來源：${sourceLabel(settings.coordinate)}` : '未設定座標'}</small
+        >
+      </section>
+      <div class="tools">
+        <Button variant="secondary" onclick={() => openSettings('coordinate')}>座標</Button><Button
+          variant="secondary"
+          onclick={() => openSettings('cornerText')}>四角文字</Button
+        ><Button variant="secondary" onclick={() => openSettings('templates')}>樣板</Button>
       </div>
-    </details>
-    {#if draftRecoveryIssue}
-      <p class="recovery-error" role="alert">{draftRecoveryIssue}</p>
-      <button
-        type="button"
-        class="secondary"
+      <div class="bottom">
+        <p class="muted">目前樣板：{settings.template.name}</p>
+        <Button
+          disabled={loading}
+          onclick={() => {
+            pending = null;
+            view = 'exportReview';
+          }}>儲存照片</Button
+        ><Button variant="secondary" onclick={() => selectedFiles?.click()}>選取另一張照片</Button>
+      </div>
+    {:else if view === 'coordinate' && pending}
+      <section class="panel">
+        <h2>座標格式</h2>
+        <div class="tools">
+          {#each [{ id: 'WGS84_DD', label: 'WGS84' }, { id: 'TWD97_TM2', label: 'TWD97' }, { id: 'MGRS', label: 'MGRS' }] as format (format.id)}<button
+              class="choice"
+              aria-pressed={pending.value.template.coordinateFormat === format.id}
+              onclick={() => {
+                if (pending)
+                  pending.value.template = {
+                    ...pending.value.template,
+                    coordinateFormat: format.id as AnnotationTemplate['coordinateFormat'],
+                  };
+              }}>{format.label}</button
+            >{/each}
+        </div>
+        {#if pending.value.template.coordinateFormat === 'TWD97_TM2'}<label
+            >分帶<select bind:value={pending.value.template.zone}
+              ><option value={121}>121°（臺灣本島）</option><option value={119}>119°（澎湖）</option
+              ></select
+            ></label
+          >{/if}
+        <label
+          >精度<select bind:value={pending.value.template.precision}
+            >{#each [0, 1, 2, 3, 4, 5] as precision (precision)}<option value={precision}
+                >{precision}</option
+              >{/each}</select
+          ></label
+        >
+        <label
+          >座標位置<select bind:value={pending.value.template.coordinateCorner}
+            ><option value="top-left">左上</option><option value="top-right">右上</option><option
+              value="bottom-left">左下</option
+            ><option value="bottom-right">右下</option></select
+          ></label
+        >
+      </section>
+      <MapConsent
+        open={consentOpen}
+        onAccept={() => {
+          mapConsented = grantMapConsent(localStorage).status === 'granted';
+          consentOpen = false;
+          view = 'map';
+        }}
+        onDecline={() => (consentOpen = false)}
+      />
+      <div class="tools">
+        <Button variant="secondary" onclick={requestMap}>在地圖上選取</Button><Button
+          variant="secondary"
+          disabled={locating}
+          onclick={locate}>{locating ? '定位中…' : '使用目前位置'}</Button
+        >
+      </div>
+      {#if locationCandidate}<section class="panel">
+          <h2>確認目前位置</h2>
+          <p>{locationCandidate.latitude.toFixed(6)}, {locationCandidate.longitude.toFixed(6)}</p>
+          <p>
+            精確度：{locationCandidate.accuracyMeters === null
+              ? '無法取得'
+              : `約 ${locationCandidate.accuracyMeters} 公尺`}
+          </p>
+          <p>目前位置可能不是照片拍攝地點。</p>
+          <Button
+            onclick={() => {
+              if (pending && locationCandidate) {
+                pending.value.coordinate = locationCandidate;
+                locationCandidate = null;
+                applySettings();
+              }
+            }}>確認使用目前位置</Button
+          >
+        </section>{/if}
+      <section class="panel">
+        <h2>手動輸入</h2>
+        <label>緯度<input type="text" inputmode="decimal" bind:value={latitude} /></label><label
+          >經度<input type="text" inputmode="decimal" bind:value={longitude} /></label
+        ><Button
+          onclick={() => {
+            if (!latitude.trim() || !longitude.trim()) {
+              error = '請填寫緯度與經度。';
+              return;
+            }
+            chooseCoordinate(Number(latitude), Number(longitude), 'MANUAL_INPUT');
+          }}>使用輸入的座標</Button
+        >
+      </section>
+      <Button
+        variant="secondary"
         onclick={() => {
-          draftRecoveryIssue = '';
-          void findRecoverableDraft();
-        }}>{t.retryDraftRecovery}</button
+          if (pending) {
+            pending.value.coordinate = null;
+            applySettings();
+          }
+        }}>不顯示座標</Button
+      >
+      <Button onclick={applySettings}>套用</Button><Button
+        variant="secondary"
+        onclick={cancelSettings}>取消</Button
+      >
+    {:else if view === 'cornerText' && pending}
+      <div class="tools">
+        <Button variant="secondary" onclick={() => (view = 'textStyle')}>文字樣式與底色</Button
+        ><Button variant="secondary" onclick={() => (view = 'watermark')}>浮水印</Button>
+      </div>
+      <CornerTextEditor
+        value={pending.value.texts}
+        onChange={(value) => {
+          if (pending) pending.value.texts = value;
+        }}
+        onSaveDefaults={async () => {
+          if (!pending) return;
+          const result = await preferences.saveCornerDefaults($state.snapshot(pending.value.texts));
+          message = result.ok ? '已儲存預設文字' : '';
+          if (!result.ok) error = '預設文字儲存失敗，請重試。';
+        }}
+      />
+      {#if message}<p role="status">{message}</p>{/if}
+      <Button onclick={applySettings}>套用</Button><Button
+        variant="secondary"
+        onclick={cancelSettings}>取消</Button
+      >
+    {:else if view === 'textStyle' && pending}
+      <NumberStepper
+        label="文字大小"
+        value={Math.round(pending.value.template.appearance.fontSize * 390)}
+        min={8}
+        max={96}
+        onChange={(value) => {
+          if (pending) updateAppearance({ fontSize: value / 390 });
+        }}
+      />
+      <label
+        >文字顏色<input
+          type="color"
+          value={rgbHex(pending.value.template.appearance.textColor)}
+          oninput={(event) => {
+            if (!pending) return;
+            const hex = event.currentTarget.value;
+            updateAppearance({
+              textColor: {
+                red: parseInt(hex.slice(1, 3), 16),
+                green: parseInt(hex.slice(3, 5), 16),
+                blue: parseInt(hex.slice(5, 7), 16),
+                alpha: 1,
+              },
+            });
+          }}
+        /></label
+      >
+      <NumberStepper
+        label="圓角"
+        value={Math.round(pending.value.template.appearance.cornerRadius * 390)}
+        min={0}
+        max={40}
+        onChange={(value) => {
+          if (pending) updateAppearance({ cornerRadius: value / 390 });
+        }}
+      />
+      <NumberStepper
+        label="內距"
+        value={Math.round(pending.value.template.appearance.padding * 390)}
+        min={0}
+        max={40}
+        onChange={(value) => {
+          if (pending) updateAppearance({ padding: value / 390 });
+        }}
+      />
+      <label
+        >背景透明度 (%)<input
+          type="range"
+          min="0"
+          max="100"
+          value={Math.round(pending.value.template.appearance.backgroundColor.alpha * 100)}
+          oninput={(event) => {
+            if (pending)
+              updateAppearance({
+                backgroundColor: {
+                  ...pending.value.template.appearance.backgroundColor,
+                  alpha: +event.currentTarget.value / 100,
+                },
+              });
+          }}
+        /></label
+      >
+      <RgbaPicker
+        value={pending.value.template.appearance.backgroundColor}
+        onChange={(value) => {
+          if (pending) updateAppearance({ backgroundColor: value });
+        }}
+        onValidityChange={(valid) => (colorValid = valid)}
+      />
+      <Button disabled={!colorValid} onclick={applySettings}>套用</Button><Button
+        variant="secondary"
+        onclick={cancelSettings}>取消</Button
+      >
+    {:else if view === 'templates' && pending}
+      <TemplatePicker
+        templates={templateItems}
+        selected={pending.value.template}
+        defaultId={defaultTemplateId}
+        onSelect={selectTemplate}
+        onSave={saveTemplate}
+        onDefault={setDefaultTemplate}
+        onCustomize={() => (view = 'textStyle')}
+      />
+      {#if message}<p role="status">{message}</p>{/if}
+      <Button variant="secondary" onclick={() => (view = 'watermark')}>設定浮水印</Button>
+      <Button onclick={applySettings}>套用</Button><Button
+        variant="secondary"
+        onclick={cancelSettings}>取消</Button
+      >
+    {:else if view === 'watermark' && pending}
+      <WatermarkEditor
+        value={pending.value.template.watermark}
+        onChange={(value) => {
+          if (pending) pending.value.template = { ...pending.value.template, watermark: value };
+        }}
+        onImage={chooseWatermark}
+      />
+      <Button onclick={applySettings}>套用</Button><Button
+        variant="secondary"
+        onclick={cancelSettings}>取消</Button
+      >
+    {:else if view === 'map'}
+      <MapPreview
+        center={display.coordinate ?? { latitude: 23.7, longitude: 121 }}
+        consented={mapConsented}
+        {online}
+        onConfirm={(value) => chooseCoordinate(value.latitude, value.longitude, 'MAP_SELECTION')}
+        onClose={() => (view = 'coordinate')}
+        onRevoke={() => {
+          revokeMapConsent(localStorage);
+          mapConsented = false;
+          view = 'coordinate';
+        }}
+      />
+    {:else if view === 'exportReview' && config}
+      <section class="panel">
+        <h2>匯出設定</h2>
+        <label
+          >格式<select bind:value={config.format} disabled={exporting}
+            ><option value="image/jpeg">JPEG</option><option value="image/png">PNG</option></select
+          ></label
+        >{#if config.format === 'image/jpeg'}<label
+            >JPEG 品質 (%)<input
+              type="range"
+              min="10"
+              max="100"
+              value={Math.round((config.quality ?? 0.92) * 100)}
+              disabled={exporting}
+              oninput={(event) => {
+                if (config) config = { ...config, quality: +event.currentTarget.value / 100 };
+              }}
+            /><span>{Math.round((config.quality ?? 0.92) * 100)}%</span></label
+          >{/if}<label>尺寸<select disabled><option>原始尺寸</option></select></label><label
+          >中繼資料<select bind:value={config.metadataMode} disabled={exporting}
+            ><option value="preserveSupported">保留支援的資料</option><option
+              value="removeSupported">移除支援的資料</option
+            ></select
+          ></label
+        >
+        <p class="muted">{photo.rawWidth} × {photo.rawHeight} · 另存新檔，原始照片不變。</p>
+        {#if config.format !== photo.sourceMime && config.metadataMode === 'preserveSupported'}<p
+            class="error"
+          >
+            變更格式時，請選擇移除支援的資料。
+          </p>{/if}
+      </section>
+      <Button
+        disabled={exporting ||
+          (config.format !== photo.sourceMime && config.metadataMode === 'preserveSupported')}
+        onclick={() => confirmExport('download')}>{exporting ? '正在處理…' : '下載照片'}</Button
+      >
+      <Button variant="secondary" disabled={exporting} onclick={() => confirmExport('share')}
+        >分享照片</Button
+      >
+    {:else if view === 'exportResult'}
+      <section class="panel">
+        <h2 role="status">{message}</h2>
+        <p>請在瀏覽器下載項目或系統分享結果中確認。草稿仍保留在此裝置。</p>
+      </section>
+      <Button onclick={() => selectedFiles?.click()}>處理下一張照片</Button><Button
+        variant="secondary"
+        onclick={cancelSettings}>繼續編輯</Button
       >
     {/if}
-  </section>
-
-  <DraftRecovery
-    open={draftRecoveryOpen}
-    sourceName={recoverableDraft?.photos[0]?.sourceName ?? t.unknownPhoto}
-    onClose={() => (draftRecoveryOpen = false)}
-    onResume={resumeRecoveredDraft}
-    onDiscard={discardRecoveredDraft}
-  />
-
-  {#if viewState === 'empty'}
-    <ImportPanel onFiles={handleFiles} />
-  {:else if viewState === 'loading'}
-    <StatusRegion message={statusMessage} busy />
-    <button type="button" class="secondary" onclick={() => (viewState = 'empty')}>{t.cancel}</button
-    >
-  {:else if viewState === 'error' && !photo}
-    <StatusRegion kind="alert" message={errorMessage} />
-    <button type="button" class="primary" disabled aria-describedby="no-photo-review-reason"
-      >{t.reviewExport}</button
-    >
-    <p id="no-photo-review-reason">{t.noPhotoReviewReason}</p>
-    <button type="button" class="secondary" onclick={() => (viewState = 'empty')}
-      >{t.retryOrReplace}</button
-    >
-    <ImportPanel onFiles={handleFiles} />
-  {:else if photo && configuration}
-    <StatusRegion
-      kind={viewState === 'error' ? 'alert' : 'status'}
-      message={viewState === 'error' ? errorMessage : statusMessage}
-      busy={viewState === 'exporting'}
-    />
-    <StepNavigation step={activeStep} onChange={changeStep} />
-
-    <section class="step-page" data-step-page={activeStep} aria-label={`${activeStep} step`}>
-      {#if activeStep === 'photo'}
-        <div class="photo-step">
-          <nav class="photo-rail" aria-label={t.photosLabel}>
-            {#if isBatch && batchSession}
-              <PhotoNavigator
-                items={batchNavigatorItems}
-                activeItemId={batchSession.activeItemId}
-                onSelect={loadBatchItem}
-                onRemove={removeInvalidItem}
-              />
-            {:else}
-              <PhotoStatus
-                name={photo.sourceName}
-                status={viewState === 'success'
-                  ? 'Exported'
-                  : coordinateReady
-                    ? 'Ready'
-                    : 'Missing coordinate'}
-                active
-              />
-            {/if}
-            <ImportPanel onFiles={handleFiles} />
-          </nav>
-          <figure class="selected-photo">
-            <img src={photoUrl} alt={`${t.previewOf} ${photo.sourceName}`} />
-            <figcaption>
-              <strong>{t.selectedPhoto}</strong>
-              <span>{photo.sourceName} · {photo.displayWidth} × {photo.displayHeight}</span>
-            </figcaption>
-          </figure>
-        </div>
-      {:else}
-        <div class="editing-step">
-          <PreviewStage
-            {photoUrl}
-            photoAlt={`${t.previewOf} ${photo.sourceName}`}
-            {overlays}
-            selectedId={activeStep === 'text' ? selectedOverlayId : null}
-            onSelect={(id) => {
-              selectedOverlayId = id;
-              activeStep = 'text';
-            }}
-            onMove={moveById}
-            onUpdate={updateById}
-          />
-
-          <aside class="step-controls" aria-label={t.photoInspectorLabel}>
-            {#if activeStep === 'coordinate'}
-              <CoordinateCard
-                {coordinate}
-                {displayText}
-                captureCoordinate={photo.metadataSummary.captureGps}
-                {locationError}
-                {manualError}
-                onUseCurrentLocation={handleCurrentLocation}
-                onManualAccepted={handleManualCoordinate}
-                onDisplayChange={handleDisplayChange}
-              />
-              <CoordinateOverlayOptions
-                mode={coordinateSelectionMode}
-                formats={coordinateFormats}
-                corner={coordinateCorner}
-                onModeChange={changeCoordinateSelectionMode}
-                onFormatToggle={toggleCoordinateFormat}
-                onCornerChange={changeCoordinateCorner}
-              />
-              <button
-                type="button"
-                class="map-action"
-                disabled={!coordinateReady}
-                onclick={requestMapPreview}>{t.previewOnMap}</button
-              >
-            {:else if activeStep === 'text'}
-              <div class="add-overlays" aria-label={t.addTextOverlayLabel}>
-                <button type="button" onclick={() => addOverlay('title')}>{t.addTitle}</button>
-                <button type="button" onclick={() => addOverlay('team')}>{t.addTeam}</button>
-                <button type="button" onclick={() => addOverlay('freeform')}
-                  >{t.addFreeformText}</button
-                >
-              </div>
-              <CornerPicker label={t.textCorner} value={textCorner} onChange={changeTextCorner} />
-              <OverlayList
-                overlays={textOverlays}
-                selectedId={selectedOverlayId}
-                onSelect={(id) => (selectedOverlayId = id)}
-                onRemove={removeOverlayById}
-                onReorder={reorderOverlayById}
-              />
-              <details class="precise-adjustments">
-                <summary>{t.preciseAdjustments}</summary>
-                <OverlayInspector
-                  overlay={selectedOverlay?.role === 'coordinate' ? null : selectedOverlay}
-                  onUpdate={updateSelected}
-                  onMove={moveSelected}
-                  onResize={resizeSelected}
-                  onRemove={removeSelected}
-                />
-              </details>
-            {:else}
-              {#if isBatch}
-                <BatchSettings onApply={applySharedSettings} />
-              {/if}
-              <ExportSettings {configuration} onChange={updateConfiguration} />
-              <div class="primary-actions">
-                <button
-                  type="button"
-                  class="primary"
-                  disabled={!canOpenReview || viewState === 'exporting'}
-                  aria-describedby={!canOpenReview ? 'review-disabled-reason' : undefined}
-                  onclick={openExportReview}>{t.reviewExport}</button
-                >
-                {#if !canOpenReview}
-                  <p id="review-disabled-reason">{disabledReason}</p>
-                {/if}
-              </div>
-              {#if isBatch && exportResults.length > 0}
-                <BatchResults items={batchResultItems} onRetry={() => void retryFailedBatch()} />
-              {:else if exportResults.length > 0}
-                <ExportResults
-                  results={exportResults}
-                  onRetry={() => {
-                    viewState = 'editing';
-                    reviewOpen = true;
-                  }}
-                />
-              {/if}
-            {/if}
-          </aside>
-        </div>
-      {/if}
-    </section>
-
-    <ExportReview
-      open={reviewOpen}
-      photoName={photo.sourceName}
-      {configuration}
-      ready={canReview}
-      reason={disabledReason}
-      onClose={() => (reviewOpen = false)}
-      onConfirm={confirmExport}
-    />
-
-    <BatchReview
-      open={batchReviewOpen}
-      items={batchReviewItems}
-      onDecision={decideBatchItem}
-      onRemove={removeInvalidItem}
-      onClose={() => (batchReviewOpen = false)}
-      onConfirm={confirmBatchExport}
-    />
-
-    <MapConsent
-      open={mapConsentOpen}
-      onAccept={acceptMapConsent}
-      onDecline={() => (mapConsentOpen = false)}
-    />
-
-    {#if mapPreviewOpen && coordinate}
-      {#key `${isOnline}:${coordinate.latitude}:${coordinate.longitude}`}
-        <MapPreview
-          center={{ latitude: coordinate.latitude, longitude: coordinate.longitude }}
-          online={isOnline}
-          onClose={() => (mapPreviewOpen = false)}
-          onRevoke={revokeMapNetworkConsent}
-        />
-      {/key}
-    {/if}
   {/if}
-</main>
+  <footer>{ready ? '已可離線使用' : '本機處理 · 離線就緒狀態尚未確認'}</footer>
+</EditorShell>
 
 <style>
-  .workspace {
-    display: grid;
-    height: 100dvh;
-    grid-template-rows: auto auto auto auto minmax(0, 1fr);
-    gap: 0.75rem;
+  .file-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
     overflow: hidden;
-    padding: clamp(1rem, 2vw, 1.5rem);
-    padding-bottom: 5.5rem;
   }
-
-  .app-header,
-  .add-overlays,
-  .primary-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.75rem;
+  .photo {
+    border-radius: var(--pm-radius-card);
+    overflow: hidden;
+    background: var(--pm-color-pale);
   }
-
-  .app-header {
-    justify-content: space-between;
-  }
-
-  .application-status {
-    display: grid;
-    grid-template-columns: auto minmax(15rem, 1fr);
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .platform-status {
-    min-width: 0;
-    border: 1px solid #334155;
-    border-radius: 0.75rem;
-    background: #0f172a;
-  }
-
-  .platform-status summary {
-    min-height: 44px;
-    padding: 0.7rem 0.85rem;
-    cursor: pointer;
-  }
-
-  .platform-status-content {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.75rem;
-    padding: 0 0.75rem 0.75rem;
-  }
-
-  h1,
-  p {
-    margin: 0;
-  }
-
-  h1 {
-    font-size: clamp(1.75rem, 4vw, 2.75rem);
-  }
-
-  .eyebrow {
-    color: #93c5fd;
-    font-size: 0.78rem;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-  }
-
-  .privacy {
-    padding: 0.5rem 0.75rem;
-    border: 1px solid #34d399;
-    border-radius: 999px;
-    color: #a7f3d0;
-  }
-
-  .step-page {
-    min-height: 0;
-    overflow: auto;
-    overscroll-behavior: contain;
-    scrollbar-gutter: stable;
-  }
-
-  .photo-step,
-  .editing-step {
-    display: grid;
-    grid-template-columns: minmax(16rem, 0.42fr) minmax(0, 1fr);
-    align-items: start;
-    gap: 1rem;
-  }
-
-  .editing-step {
-    grid-template-columns: minmax(0, 1.35fr) minmax(19rem, 0.65fr);
-  }
-
-  .photo-rail,
-  .step-controls {
-    display: grid;
-    min-width: 0;
-    gap: 1rem;
-  }
-
-  .selected-photo {
-    display: grid;
-    min-width: 0;
-    min-height: 20rem;
-    margin: 0;
-    padding: 1rem;
-    border: 1px solid #334155;
-    border-radius: 1rem;
-    background: #0f172a;
-  }
-
-  .selected-photo img {
+  .photo img {
+    display: block;
     width: 100%;
-    max-height: 55vh;
+    max-height: 55dvh;
     object-fit: contain;
-    border-radius: 0.75rem;
-    background: #020617;
   }
-
-  .selected-photo figcaption {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding-top: 0.75rem;
-    color: #cbd5e1;
+  .panel {
+    padding: 16px;
+    border-radius: 18px;
+    background: var(--pm-color-pale);
+    display: grid;
+    gap: 12px;
   }
-
-  .precise-adjustments {
-    border: 1px solid #334155;
-    border-radius: 0.75rem;
-    background: #0f172a;
+  .panel p,
+  .panel h2 {
+    margin: 0;
   }
-
-  .precise-adjustments summary {
-    min-height: 44px;
-    padding: 0.75rem;
-    cursor: pointer;
-    font-weight: 700;
+  .panel strong {
+    color: var(--pm-color-accent);
   }
-
-  .precise-adjustments :global(.overlay-inspector) {
-    padding: 0 0.75rem 0.75rem;
+  h2 {
+    font-size: 18px;
   }
-
-  .photo-rail :global(.import-panel) {
-    padding: 1rem;
+  .welcome {
+    padding: 52px 0;
   }
-
-  .add-overlays button,
-  .map-action,
-  .primary,
-  .secondary {
-    min-height: 44px;
-    padding: 0.6rem 0.85rem;
-    border: 1px solid #60a5fa;
-    border-radius: 0.65rem;
-    color: #eff6ff;
-    background: #1e3a8a;
-    cursor: pointer;
+  .welcome h2 {
+    font-size: clamp(28px, 5vw, 44px);
+    line-height: 1.5;
+    margin: 12px 0 24px;
   }
-
-  .primary {
-    color: #0f172a;
-    background: #93c5fd;
-    font-weight: 700;
+  .welcome p {
+    line-height: 1.8;
+    color: var(--pm-color-muted);
   }
-
-  .primary:disabled {
-    color: #94a3b8;
-    background: #1e293b;
-    cursor: not-allowed;
+  .eyebrow {
+    color: var(--pm-color-accent);
   }
-
-  .map-action {
-    width: fit-content;
+  .tools {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+    gap: 10px;
   }
-
-  .primary-actions {
-    padding: 0.75rem 0;
-    background: #070b14;
+  .bottom {
+    margin-top: auto;
+    display: grid;
+    gap: 12px;
   }
-
-  .primary-actions p {
-    color: #fbbf24;
+  .muted,
+  footer,
+  small {
+    color: var(--pm-color-muted);
+    font-size: 12px;
   }
-
-  @media (max-width: 1023px) {
-    .editing-step {
-      grid-template-columns: minmax(0, 1fr) minmax(17rem, 0.8fr);
-    }
+  footer {
+    text-align: center;
+    margin-top: 12px;
   }
-
-  @media (max-width: 767px) {
-    .workspace {
-      padding: 0.75rem;
-      padding-bottom: 5.25rem;
-    }
-
-    .photo-step,
-    .editing-step,
-    .photo-rail,
-    .application-status,
-    .platform-status-content {
-      grid-template-columns: minmax(0, 1fr);
-    }
-
-    .app-header .eyebrow,
-    .privacy {
-      display: none;
-    }
-
-    h1 {
-      font-size: 1.75rem;
-    }
-
-    .application-status {
-      gap: 0.5rem;
-    }
-
-    .selected-photo {
-      min-height: 16rem;
-    }
-
-    .step-controls :global(input),
-    .step-controls :global(textarea),
-    .step-controls :global(select),
-    .step-controls :global(button),
-    .step-controls :global(summary) {
-      scroll-margin-bottom: 6rem;
-    }
+  .choice {
+    min-height: 50px;
+    padding: 8px;
+    background: white;
+    border: 2px solid var(--pm-color-border);
+    border-radius: 14px;
+    color: var(--pm-color-ink);
+  }
+  .choice[aria-pressed='true'] {
+    border-color: var(--pm-color-accent);
+    background: var(--pm-color-pale);
+  }
+  .error {
+    color: var(--pm-color-error);
+    font-size: 14px;
+  }
+  label {
+    display: grid;
+    gap: 8px;
+  }
+  input,
+  select {
+    min-height: 48px;
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--pm-color-border);
+    border-radius: 12px;
+    background: white;
+    color: var(--pm-color-ink);
   }
 </style>

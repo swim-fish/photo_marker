@@ -12,11 +12,13 @@ let queue: Promise<void> = Promise.resolve();
 
 scope.onmessage = (event: MessageEvent<RenderRequest>) => {
   const request = event.data;
-  queue = queue.then(async () => {
-    const result = await renderPhoto(request.source, {
-      ...request.options,
-      workerAvailable: true,
+  queue = queue
+    .catch(() => undefined)
+    .then(async () => {
+      const result = await renderPhoto(request.source, {
+        ...request.options,
+        workerAvailable: true,
+      });
+      scope.postMessage({ id: request.id, result });
     });
-    scope.postMessage({ id: request.id, result });
-  });
 };

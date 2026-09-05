@@ -1,8 +1,8 @@
 <script lang="ts">
   import Workspace from './components/workspace/Workspace.svelte';
-  import { messages } from './i18n';
+  import { getMessages } from './i18n';
 
-  const t = messages.en;
+  const t = getMessages();
 </script>
 
 <svelte:head>

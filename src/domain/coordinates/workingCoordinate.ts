@@ -31,8 +31,7 @@ function isValidWgs84(latitude: number, longitude: number): boolean {
     latitude >= -90 &&
     latitude <= 90 &&
     longitude >= -180 &&
-    longitude <= 180 &&
-    !(latitude === 0 && longitude === 0)
+    longitude <= 180
   );
 }
 
@@ -44,8 +43,8 @@ export function replaceWorkingCoordinate(
   if (!isValidWgs84(input.latitude, input.longitude)) return failure('out-of-range');
   if (
     input.provenance === 'CURRENT_GPS' &&
-    (!Number.isFinite(input.accuracyMeters) ||
-      (input.accuracyMeters ?? -1) < 0 ||
+    ((input.accuracyMeters != null &&
+      (!Number.isFinite(input.accuracyMeters) || input.accuracyMeters < 0)) ||
       !input.acquiredAt)
   ) {
     return failure('invalid-input');

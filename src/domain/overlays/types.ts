@@ -29,6 +29,7 @@ export type TextOverlay = OverlayGeometry &
     textColor: RgbaColor;
     backgroundColor: RgbaColor;
     padding: number;
+    cornerRadius?: number;
     lineHeight: number;
     order: number;
     contrastStatus: ContrastStatus;

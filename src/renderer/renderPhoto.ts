@@ -1,8 +1,14 @@
+import type { WatermarkRenderLayer } from '../domain/watermarks/types';
 import type { TextOverlay } from '../domain/overlays/types';
 import type { PhotoMime, PhotoOrientation } from '../domain/photos/types';
 import { failure, type Result, success } from '../domain/result';
 import { readMetadata } from '../infrastructure/metadata/readMetadata';
-import { createRenderPlan, renderCanvasBlob, type RenderPlan } from './canvasRenderer';
+import {
+  createRenderPlan,
+  createPreviewPlan,
+  renderCanvasBlob,
+  type RenderPlan,
+} from './canvasRenderer';
 
 export { createRenderPlan } from './canvasRenderer';
 
@@ -15,6 +21,7 @@ export type RenderPhotoOptions = Readonly<{
   mode: 'preview' | 'export';
   orientation?: PhotoOrientation;
   overlays: readonly TextOverlay[];
+  watermark?: WatermarkRenderLayer;
   outputFormat?: PhotoMime;
   metadataMode?: 'preserveSupported' | 'removeSupported';
   workerAvailable?: boolean;
@@ -48,17 +55,10 @@ export async function renderPhoto(
       outputFormat,
       metadataMode: options.metadataMode ?? 'preserveSupported',
       overlays: options.overlays,
+      watermark: options.watermark,
     });
 
-    const canvasPlan: RenderPlan =
-      options.mode === 'preview' && plan.orientationMode === 'preserveRaw'
-        ? {
-            ...plan,
-            outputWidth: plan.displayWidth,
-            outputHeight: plan.displayHeight,
-            orientationMode: 'bakeUpright',
-          }
-        : plan;
+    const canvasPlan = options.mode === 'preview' ? createPreviewPlan(plan) : plan;
     const blob = await (options.renderCanvas ?? renderCanvasBlob)(
       source,
       canvasPlan,
@@ -75,6 +75,8 @@ export async function renderPhoto(
       overlayRects: plan.overlayRects,
       plan,
     });
+  } catch {
+    return failure('encode-failed');
   } finally {
     options.resources?.releaseBitmap?.();
     options.resources?.revokeObjectUrl?.();

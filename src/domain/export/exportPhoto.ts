@@ -1,3 +1,4 @@
+import type { WatermarkRenderLayer } from '../watermarks/types';
 import type { TextOverlay } from '../overlays/types';
 import type { SourcePhoto } from '../photos/types';
 import { failure, type Result, type Success, success } from '../result';
@@ -23,6 +24,7 @@ export type ExportPhotoRequest = Readonly<{
   saveMethod: SaveMethod;
   fallback: ExportFallback | null;
   overlays?: readonly TextOverlay[];
+  watermark?: WatermarkRenderLayer;
 }>;
 
 type RenderDependency = (
@@ -126,6 +128,7 @@ export async function exportPhoto(
     mode: 'export',
     orientation: source.orientation,
     overlays: request.overlays ?? [],
+    watermark: request.watermark,
     outputFormat: request.format,
     metadataMode: request.metadataMode,
     quality: request.format === 'image/jpeg' ? (request.quality ?? 0.92) : undefined,

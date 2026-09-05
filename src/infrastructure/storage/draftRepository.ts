@@ -1,3 +1,10 @@
+import { sameAsset } from './immutableAsset';
+import type { AnnotationTemplate, CornerTexts } from '../../domain/templates/types';
+import type {
+  WatermarkConfig,
+  WatermarkArrangement,
+  WatermarkAsset,
+} from '../../domain/watermarks/types';
 import type { IDBPDatabase } from 'idb';
 
 import { failure, type Result, success } from '../../domain/result';
@@ -6,12 +13,7 @@ import type { EditingSession } from '../../domain/drafts/types';
 import type { ExportConfiguration, ExportResult } from '../../domain/export/types';
 import type { SourcePhoto } from '../../domain/photos/types';
 import type { TextOverlay } from '../../domain/overlays/types';
-import {
-  CURRENT_RECORD_SCHEMA_VERSION,
-  defaultRecordMigration,
-  migrateDraftRecord,
-  type MigratableDraftRecord,
-} from './migrations';
+import { CURRENT_RECORD_SCHEMA_VERSION, type MigratableDraftRecord } from './migrations';
 import {
   getStorageEstimate,
   openDraftDatabase,
@@ -27,6 +29,11 @@ import {
 
 export type PersistedDraftSnapshot = Readonly<{
   session: EditingSession;
+  editorTemplate?: AnnotationTemplate;
+  cornerTexts?: CornerTexts;
+  watermarkConfigs?: readonly WatermarkConfig[];
+  watermarkArrangements?: readonly WatermarkArrangement[];
+  selectedTemplateId?: string;
   coordinates?: readonly CoordinateRecord[];
   overlays?: readonly TextOverlay[];
   exportConfigurations?: readonly ExportConfiguration[];
@@ -48,6 +55,8 @@ export type DraftSnapshot = PersistedDraftSnapshot &
   }>;
 
 export type DraftStorageErrorCode =
+  | 'asset-not-found'
+  | 'asset-conflict'
   | 'not-found'
   | 'persistence-denied'
   | 'quota-exceeded'
@@ -105,7 +114,10 @@ export class DraftRepository {
     this.options = options;
   }
 
-  async save(snapshot: DraftSnapshot): Promise<DraftResult<DraftSaveSummary>> {
+  async save(
+    snapshot: DraftSnapshot,
+    assets: readonly WatermarkAsset[] = [],
+  ): Promise<DraftResult<DraftSaveSummary>> {
     const ownsDatabase = !this.options.database && !this.options.writeTransaction;
     try {
       const persistence = await this.preparePersistence();
@@ -125,7 +137,10 @@ export class DraftRepository {
             sourceBytes: await photo.sourceBlob.arrayBuffer(),
           })),
         );
-        const transaction = database.transaction(['sessions', 'revisions', 'photos'], 'readwrite');
+        const transaction = database.transaction(
+          ['sessions', 'revisions', 'photos', 'watermarkAssets'],
+          'readwrite',
+        );
         const revisionRecord: DraftRevisionRecord = {
           sessionId: snapshot.session.id,
           revision,
@@ -140,14 +155,41 @@ export class DraftRepository {
           latestRevision: revision,
           updatedAt: snapshot.session.updatedAt,
         };
-        await transaction.objectStore('sessions').put(sessionRecord, snapshot.session.id);
-        for (const photoRecord of photoRecords) {
-          await transaction.objectStore('photos').put(photoRecord, photoRecord.id);
+        try {
+          for (const asset of assets) {
+            const existing = await transaction.objectStore('watermarkAssets').get(asset.id);
+            if (existing && !sameAsset(existing, asset))
+              throw new DraftStorageError('asset-conflict');
+            if (!existing) await transaction.objectStore('watermarkAssets').add(asset, asset.id);
+          }
+          for (const config of [
+            ...(snapshot.watermarkConfigs ?? []),
+            ...(snapshot.editorTemplate ? [snapshot.editorTemplate.watermark] : []),
+          ]) {
+            if (
+              config.kind === 'image' &&
+              (!config.assetId ||
+                !(await transaction.objectStore('watermarkAssets').get(config.assetId)))
+            )
+              throw new DraftStorageError('asset-not-found');
+          }
+          await transaction.objectStore('sessions').put(sessionRecord, snapshot.session.id);
+          for (const photoRecord of photoRecords) {
+            await transaction.objectStore('photos').put(photoRecord, photoRecord.id);
+          }
+          await transaction
+            .objectStore('revisions')
+            .put(revisionRecord, [snapshot.session.id, revision]);
+          await transaction.done;
+        } catch (error) {
+          try {
+            transaction.abort();
+          } catch {
+            /* Already aborted. */
+          }
+          await transaction.done.catch(() => undefined);
+          throw error;
         }
-        await transaction
-          .objectStore('revisions')
-          .put(revisionRecord, [snapshot.session.id, revision]);
-        await transaction.done;
       }
       return success({
         sessionId: snapshot.session.id,
@@ -155,7 +197,13 @@ export class DraftRepository {
         persistenceStatus: persistence,
       });
     } catch (error) {
-      return failureResult(isQuotaError(error) ? 'quota-exceeded' : 'storage-error');
+      return failureResult(
+        error instanceof DraftStorageError
+          ? error.code
+          : isQuotaError(error)
+            ? 'quota-exceeded'
+            : 'storage-error',
+      );
     } finally {
       if (ownsDatabase) this.close();
     }
@@ -177,23 +225,22 @@ export class DraftRepository {
         .filter((record) => record.status === 'committed')
         .sort((left, right) => right.revision - left.revision);
       for (const record of candidates) {
-        const migrated = migrateDraftRecord(
-          record,
-          this.options.migrate ?? defaultRecordMigration,
-          CURRENT_RECORD_SCHEMA_VERSION,
-        );
-        if (!migrated.ok) {
-          return failureResult(
-            migrated.error.code === 'incompatible-version'
-              ? 'incompatible-version'
-              : 'migration-failed',
-          );
-        }
-
-        const migratedRecord = migrated.value as unknown as DraftRevisionRecord;
+        if (record.recordSchemaVersion !== CURRENT_RECORD_SCHEMA_VERSION)
+          return failureResult('incompatible-version');
+        const migratedRecord = record;
         const snapshot = migratedRecord.snapshot as PersistedDraftSnapshot & {
           photos?: readonly SourcePhoto[];
         };
+        for (const config of [
+          ...(snapshot.watermarkConfigs ?? []),
+          ...(snapshot.editorTemplate ? [snapshot.editorTemplate.watermark] : []),
+        ]) {
+          if (
+            config.kind === 'image' &&
+            (!config.assetId || !(await database.get('watermarkAssets', config.assetId)))
+          )
+            return failureResult('asset-not-found');
+        }
         const persistedPhotos = snapshot.photos?.length
           ? [...snapshot.photos]
           : await this.photosForRevision(database, snapshot.session, sessionId);
@@ -204,7 +251,13 @@ export class DraftRepository {
       }
       return failureResult('storage-error');
     } catch (error) {
-      return failureResult(isQuotaError(error) ? 'quota-exceeded' : 'storage-error');
+      return failureResult(
+        error instanceof DraftStorageError
+          ? error.code
+          : isQuotaError(error)
+            ? 'quota-exceeded'
+            : 'storage-error',
+      );
     } finally {
       if (ownsDatabase) this.close();
     }
@@ -243,7 +296,13 @@ export class DraftRepository {
       await transaction.done;
       return success(undefined);
     } catch (error) {
-      return failureResult(isQuotaError(error) ? 'quota-exceeded' : 'storage-error');
+      return failureResult(
+        error instanceof DraftStorageError
+          ? error.code
+          : isQuotaError(error)
+            ? 'quota-exceeded'
+            : 'storage-error',
+      );
     } finally {
       if (ownsDatabase) this.close();
     }
@@ -384,6 +443,18 @@ function failureResult<T>(code: DraftStorageErrorCode): DraftResult<T> {
 
 function diagnosticFor(code: DraftStorageErrorCode): DraftStorageDiagnostic {
   switch (code) {
+    case 'asset-not-found':
+      return {
+        code,
+        message: 'A watermark image is missing.',
+        action: 'Select the PNG watermark again before saving.',
+      };
+    case 'asset-conflict':
+      return {
+        code,
+        message: 'A watermark image identifier is already in use.',
+        action: 'Import the image again with a new identifier.',
+      };
     case 'not-found':
       return {
         code,

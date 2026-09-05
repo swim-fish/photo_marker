@@ -1,0 +1,43 @@
+import { describe, expect, it } from 'vitest';
+import { sanitizeTemplate, applyTemplate } from '../../../src/domain/templates/templateService';
+import { defaultTemplate } from '../../../src/domain/templates/types';
+describe('template data isolation', () => {
+  it('persists only style fields, never photo content or coordinates', () => {
+    const result = sanitizeTemplate({
+      ...defaultTemplate,
+      photoId: 'private',
+      latitude: 25,
+      cornerTexts: { 'top-left': 'secret' },
+    });
+    expect(result).toEqual(defaultTemplate);
+    expect(JSON.stringify(result)).not.toMatch(/private|secret|latitude/);
+  });
+  it('rejects malformed color, text and placement contracts', () => {
+    expect(
+      sanitizeTemplate({
+        ...defaultTemplate,
+        appearance: {
+          ...defaultTemplate.appearance,
+          backgroundColor: { red: 256, green: 1, blue: 1, alpha: 1 },
+        },
+      }),
+    ).toBeNull();
+    expect(
+      sanitizeTemplate({
+        ...defaultTemplate,
+        watermark: { ...defaultTemplate.watermark, mode: 'repeat', kind: 'image' },
+      }),
+    ).toBeNull();
+  });
+  it('applies appearance while preserving photo location and edited text', () => {
+    const current = {
+      template: defaultTemplate,
+      texts: { label: 'field A' },
+      coordinate: { latitude: 25, longitude: 121 },
+    };
+    const result = applyTemplate({ ...defaultTemplate, name: 'new' }, current);
+    expect(result?.texts).toEqual(current.texts);
+    expect(result?.coordinate).toEqual(current.coordinate);
+    expect(current.template.name).toBe('戶外紀錄');
+  });
+});

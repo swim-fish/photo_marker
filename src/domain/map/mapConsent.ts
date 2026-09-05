@@ -1,7 +1,7 @@
 import type { MapNetworkConsent } from './types';
 
-export const MAP_CONSENT_POLICY_VERSION = 1;
-export const MAP_CONSENT_STORAGE_KEY = 'photo-marker:map-network-consent';
+export const MAP_CONSENT_POLICY_VERSION = 2;
+export const MAP_CONSENT_STORAGE_KEY = 'photo-marker-v2:map-network-consent';
 
 function unknownConsent(): MapNetworkConsent {
   return {

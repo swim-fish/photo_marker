@@ -1,7 +1,8 @@
 # Redesigned Photo Editor UI Contract
 
-**Status**: Planned; implements specs/002-redesign-pwa-editor. The existing
-[workspace guide](photo-annotation-workspace.md) remains the deployed baseline until implementation.
+**Status**: Implemented in the working tree; release acceptance remains pending the external and
+physical-device gates in `specs/002-redesign-pwa-editor/validation.md`. This is the active interface;
+[the previous workspace guide](photo-annotation-workspace.md) is historical.
 **Reference**: [Figma](https://www.figma.com/design/NCRix4fCkTgdk8538hrjJV/Photo-Marker), 19 frames
 inspected 2026-09-05.
 
@@ -58,3 +59,36 @@ Apply/cancel, storage rollback, stale callbacks and failed share must not lose w
 Validate all new Figma states, landscape/portrait orientation, 320px phone, tablet, desktop and
 keyboard-only use. Implementation updates this document and the baseline guide together when behavior
 is delivered; Figma illustrations and prototype links are not substitutes for application validation.
+
+## Design token reference
+
+Figma editor 4:3: background #f8faf7, ink #18352f, accent #16745c, pale #eaf3ec,
+muted #64766f and white. Use 8/12/16/24px spacing, 14px control radius, 18px card radius,
+22px bold titles, 15px medium action text and 12px captions with 1.5 line height.
+The 19-frame inventory and requirement mapping are in spec.md's Design Reference and Traceability.
+View states include import, editor, coordinates/missing GPS, map/layers/device candidate, corner text,
+defaults, appearance/RGBA, single/repeated watermark, templates/customization, export and outcome.
+
+## Delivered implementation
+
+`Workspace.svelte` owns a single applied settings transaction and the focused views. `EditorShell`,
+`Button`, `NumberStepper`, `RgbaPicker`, `CornerTextEditor`, `WatermarkEditor` and `TemplatePicker`
+provide shared composition. The previous batch/navigation components are not mounted by App.
+Back and Cancel leave pending settings; Apply validates and commits the whole pending transaction.
+Defaults are saved explicitly and only affect a later import. Text-style and RGBA controls share one
+view, while default-text confirmation is inline rather than a separate screen.
+
+Preview uses at most 1280 pixels on its longest edge with an 80 ms edit debounce; exports retain full
+source dimensions. Both paths load the packaged Noto Sans TC face and use the same normalized layout.
+JPEG quality is adjustable; the supported output size is the original size. Format conversion requires
+explicit metadata removal. PNG watermark limit: 2 MiB / 2048 by 2048 pixels. Repeat counts: 5/10/20.
+Template thumbnails show placement, appearance and watermark preferences without photo content.
+
+The production worker checks every external tile against the exact three-layer matrix allowlist and
+asks the requesting live page whether its map is currently open with consent. Missing controller,
+missing client, invalid ACK or unanswered query fail closed. Consent is fresh policy 2; authorization
+is never persisted as a long-lived worker lease and survives worker restart via the live-page query.
+Offline readiness, draft persistence failure and download/share handoff messages reflect actual results.
+
+Automated screenshots cover the main phone views and 320/768/1280 px style controls. Full 19-state
+approval across the device matrix and physical on-screen-keyboard inspection remain release work.

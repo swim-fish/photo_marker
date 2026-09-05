@@ -1,0 +1,17 @@
+/* Semantic tokens from the Photo Marker Figma library. */
+:root {
+  --pm-color-bg: #f8faf7;
+  --pm-color-ink: #18352f;
+  --pm-color-accent: #16745c;
+  --pm-color-pale: #eaf3ec;
+  --pm-color-muted: #64766f;
+  --pm-color-white: #fff;
+  --pm-color-border: #dbe5de;
+  --pm-color-error: #aa3030;
+  --pm-space-8: 8px;
+  --pm-space-12: 12px;
+  --pm-space-16: 16px;
+  --pm-space-24: 24px;
+  --pm-radius-control: 14px;
+  --pm-radius-card: 18px;
+}

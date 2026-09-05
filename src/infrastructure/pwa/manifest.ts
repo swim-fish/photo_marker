@@ -8,7 +8,7 @@ export type PhotoMarkerManifest = {
   display: 'standalone';
   background_color: string;
   theme_color: string;
-  lang: 'en';
+  lang: 'zh-TW';
   icons: Array<{
     src: string;
     sizes: string;
@@ -33,13 +33,13 @@ export function createWebAppManifest(enableShareTarget: boolean): PhotoMarkerMan
     id: '/photo-marker/',
     name: 'Photo Marker',
     short_name: 'Photo Marker',
-    description: 'Offline photo annotation workspace',
+    description: '離線照片座標與文字標記',
     start_url: '/',
     scope: '/',
     display: 'standalone',
-    background_color: '#070b14',
-    theme_color: '#0b1220',
-    lang: 'en',
+    background_color: '#f8faf7',
+    theme_color: '#f8faf7',
+    lang: 'zh-TW',
     icons: [
       { src: '/icons/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
       {

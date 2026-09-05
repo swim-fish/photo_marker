@@ -34,8 +34,8 @@ export type EditingSessionAction =
 const transitions: Readonly<Record<EditingSessionStatus, readonly EditingSessionStatus[]>> = {
   creating: ['editing', 'discarded'],
   editing: ['reviewing', 'storageError', 'discarded'],
-  reviewing: ['exporting', 'storageError', 'discarded'],
-  exporting: ['partiallyExported', 'completed', 'storageError'],
+  reviewing: ['editing', 'exporting', 'storageError', 'discarded'],
+  exporting: ['reviewing', 'partiallyExported', 'completed', 'storageError'],
   partiallyExported: ['reviewing', 'exporting', 'discarded'],
   completed: [],
   discarded: [],

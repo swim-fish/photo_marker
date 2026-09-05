@@ -139,7 +139,7 @@ describe('draft recovery integration', () => {
     if (restored.ok) expect(restored.value.session.revision).toBe(2);
   });
 
-  it('leaves the prior revision readable when a migration callback fails', async () => {
+  it('rejects a noncanonical record without migrating or deleting committed data', async () => {
     await deleteDraftDatabase();
     const repository = new DraftRepository({
       migrate: () => {
@@ -167,11 +167,14 @@ describe('draft recovery integration', () => {
     db.close();
     const result = await repository.restore(sessionId);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe('migration-failed');
+    if (!result.ok) expect(result.error.code).toBe('incompatible-version');
 
     const previous = await new DraftRepository({ migrate: undefined }).restore(sessionId);
-    expect(previous.ok).toBe(true);
-    if (previous.ok) expect(await previous.value.photos[0].sourceBlob.text()).toBe('safe');
+    expect(previous.ok).toBe(false);
+    const verify = await openDraftDatabase();
+    expect(await verify.get('revisions', [sessionId, original.session.revision])).toBeDefined();
+    expect((await verify.get('revisions', [sessionId, 2]))?.recordSchemaVersion).toBe(0);
+    verify.close();
   });
 
   it('never writes source blobs to Cache Storage', async () => {

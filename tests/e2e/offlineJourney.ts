@@ -1,78 +1,51 @@
-import { resolve } from 'node:path';
-
 import type { BrowserContext, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
-
-const photoFixture = resolve(process.cwd(), 'tests/integration/fixtures/sample.png');
-
 export async function completeOfflineDraftJourney(
   page: Page,
   context: BrowserContext,
 ): Promise<void> {
   await page.goto('/');
-  await expect(page.getByText('Offline ready', { exact: true })).toBeVisible({ timeout: 10_000 });
-
-  await page.locator('input[type="file"]').setInputFiles(photoFixture);
-  await page.getByLabel(/Latitude \(WGS84 decimal degrees\)/i).fill('25.033');
-  await page.getByLabel(/Longitude \(WGS84 decimal degrees\)/i).fill('121.5654');
-  await page.getByRole('button', { name: 'Use manual coordinate' }).click();
-  await expect(page.getByText(/Saved locally|Best-effort local draft/i)).toBeVisible();
-
-  await page.reload();
-  const recovery = page.getByRole('dialog', { name: /resume local draft/i });
-  await expect(recovery).toBeVisible();
-  await recovery.getByRole('button', { name: 'Resume draft' }).click();
-  await expect(page.getByText(/Manual input: 25\.033000, 121\.565400/)).toBeVisible();
-  expect(await page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
-  expect(
-    await page.evaluate(async () => {
-      const names = await caches.keys();
-      const entries = await Promise.all(
-        names.map(async (name) => ({
-          name,
-          urls: (await (await caches.open(name)).keys()).map((request) => request.url),
-        })),
-      );
-      return entries;
-    }),
-  ).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        name: expect.stringMatching(/^photo-marker-shell-/),
-        urls: expect.arrayContaining([expect.stringContaining('/assets/index-')]),
-      }),
-    ]),
-  );
-
-  const offlineErrors: string[] = [];
-  page.on('pageerror', (error) => offlineErrors.push(error.message));
-  page.on('console', (message) => {
-    if (message.type() === 'error') offlineErrors.push(message.text());
+  await expect(page.getByText('已可離線使用', { exact: true })).toBeVisible({ timeout: 15000 });
+  await page.getByLabel('選取照片').setInputFiles('tests/integration/fixtures/sample.png');
+  await page.getByRole('button', { name: '座標', exact: true }).click();
+  await page.getByLabel('緯度', { exact: true }).fill('25.033');
+  await page.getByLabel('經度', { exact: true }).fill('121.5654');
+  await page.getByRole('button', { name: '使用輸入的座標' }).click();
+  await expect(page.getByText(/已自動儲存草稿/)).toBeVisible();
+  const external: string[] = [];
+  context.on('request', (request) => {
+    if (
+      request.url().startsWith('http') &&
+      !['127.0.0.1', 'localhost'].includes(new URL(request.url()).hostname)
+    )
+      external.push(request.url());
   });
-  page.on('requestfailed', (request) =>
-    offlineErrors.push(`${request.url()}: ${request.failure()?.errorText ?? 'request failed'}`),
-  );
   await context.setOffline(true);
-  const offlineResponse = await page.reload();
-  expect(offlineResponse?.status()).toBe(200);
-  expect(offlineErrors).toEqual([]);
-  expect(await page.locator('body').innerText()).toContain('Photo Marker');
-  await expect(page.getByText('Offline ready', { exact: true })).toBeVisible();
-  // Chromium's DevTools offline emulation does not update navigator.onLine.
-  await page.evaluate(() => window.dispatchEvent(new Event('offline')));
-  await expect(page.getByText('Working offline', { exact: true })).toBeVisible();
-  await expect(recovery).toBeVisible();
-  await recovery.getByRole('button', { name: 'Resume draft' }).click();
-
-  await page.getByRole('button', { name: 'Review export' }).click();
-  const review = page.getByRole('dialog', { name: /export review/i });
-  const downloadPromise = page.waitForEvent('download');
-  await review.getByRole('button', { name: /^Export$/i }).click();
-  await downloadPromise;
-  await expect(page.getByRole('status').filter({ hasText: /^Success:/i })).toBeVisible();
-
   await page.reload();
-  await expect(page.getByRole('dialog', { name: /resume local draft/i })).not.toBeVisible();
-  await expect(page.getByRole('button', { name: 'Import photos' })).toBeVisible();
+  await expect(page.getByText('已可離線使用', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '還原草稿' }).click();
+  await expect(page.getByText('25.033000, 121.565400', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '四角文字', exact: true }).click();
+  await page.getByLabel('左上文字', { exact: true }).fill('離線記錄');
+  await page.getByRole('button', { name: '套用', exact: true }).click();
+  await page.getByRole('button', { name: '儲存照片', exact: true }).click();
+  const output = page.waitForEvent('download');
+  await page.getByRole('button', { name: '下載照片', exact: true }).click();
+  await output;
+  await expect(page.getByText('下載已開始')).toBeVisible();
+  expect(external).toEqual([]);
+  const urls = await page.evaluate(async () =>
+    (
+      await Promise.all(
+        (await caches.keys()).map(async (name) =>
+          (await (await caches.open(name)).keys()).map((request) => request.url),
+        ),
+      )
+    ).flat(),
+  );
+  expect(urls.some((url) => url.includes('/fonts/'))).toBe(true);
+  expect(urls.some((url) => /wmts\.nlsc|blob:|\/photos\/|\/drafts\//.test(url))).toBe(false);
+  await page.reload();
+  await expect(page.getByRole('button', { name: '還原草稿' })).toBeVisible();
   await context.setOffline(false);
 }

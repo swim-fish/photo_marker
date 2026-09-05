@@ -1,3 +1,5 @@
+import { ensureEditorFont } from './font';
+import type { WatermarkRenderLayer } from '../domain/watermarks/types';
 import type { TextOverlay } from '../domain/overlays/types';
 import { sortOverlaysByOrder } from '../domain/overlays/geometry';
 import type { PhotoOrientation } from '../domain/photos/types';
@@ -18,6 +20,7 @@ export type RenderPlanInput = Readonly<{
   outputFormat: 'image/jpeg' | 'image/png';
   metadataMode: 'preserveSupported' | 'removeSupported';
   overlays: readonly TextOverlay[];
+  watermark?: WatermarkRenderLayer;
 }>;
 
 export type RenderPlan = Readonly<{
@@ -30,6 +33,7 @@ export type RenderPlan = Readonly<{
   orientationMode: 'preserveRaw' | 'bakeUpright';
   disclosureRequired: boolean;
   overlays: readonly TextOverlay[];
+  watermark?: WatermarkRenderLayer;
   overlayRects: readonly PixelRect[];
   rawOverlayRects: readonly PixelRect[];
 }>;
@@ -51,10 +55,25 @@ export function createRenderPlan(input: RenderPlanInput): RenderPlan {
     orientationMode: preserveRaw ? 'preserveRaw' : 'bakeUpright',
     disclosureRequired: !preserveRaw,
     overlays,
+    watermark: input.watermark,
     overlayRects: overlays.map((overlay) => layoutOverlayRect(overlay, display)),
     rawOverlayRects: overlays.map((overlay) =>
       mapDisplayRectToRaw(overlay, input.rawWidth, input.rawHeight, input.orientation),
     ),
+  };
+}
+
+export function createPreviewPlan(plan: RenderPlan): RenderPlan {
+  const scale = Math.min(1, 1280 / Math.max(plan.displayWidth, plan.displayHeight));
+  const width = Math.round(plan.displayWidth * scale),
+    height = Math.round(plan.displayHeight * scale);
+  return {
+    ...plan,
+    displayWidth: width,
+    displayHeight: height,
+    outputWidth: width,
+    outputHeight: height,
+    orientationMode: 'bakeUpright',
   };
 }
 
@@ -97,7 +116,31 @@ function paintOverlays(
     const fontSize = Math.max(1, overlay.fontSize * dimensions.height);
     context.save();
     context.fillStyle = rgba(overlay.backgroundColor);
-    context.fillRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height);
+    const radius = Math.min(
+      rectangle.width / 2,
+      rectangle.height / 2,
+      Math.max(0, overlay.cornerRadius ?? 0) * Math.min(dimensions.width, dimensions.height),
+    );
+    if (radius > 0) {
+      context.beginPath();
+      if (typeof context.roundRect === 'function')
+        context.roundRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height, radius);
+      else {
+        const { x, y, width: w, height: h } = rectangle,
+          r = radius;
+        context.moveTo(x + r, y);
+        context.lineTo(x + w - r, y);
+        context.quadraticCurveTo(x + w, y, x + w, y + r);
+        context.lineTo(x + w, y + h - r);
+        context.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        context.lineTo(x + r, y + h);
+        context.quadraticCurveTo(x, y + h, x, y + h - r);
+        context.lineTo(x, y + r);
+        context.quadraticCurveTo(x, y, x + r, y);
+        context.closePath();
+      }
+      context.fill();
+    } else context.fillRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height);
     context.beginPath();
     context.rect(rectangle.x, rectangle.y, rectangle.width, rectangle.height);
     context.clip();
@@ -112,6 +155,61 @@ function paintOverlays(
       );
     }
     context.restore();
+  }
+}
+
+async function paintWatermark(context: CanvasContext, plan: RenderPlan): Promise<void> {
+  const layer = plan.watermark;
+  if (!layer?.config.enabled || (layer.config.kind === 'text' && !layer.config.text.trim())) return;
+  if (
+    !Number.isFinite(layer.config.opacity) ||
+    layer.config.opacity < 0 ||
+    layer.config.opacity > 1 ||
+    layer.arrangement.rectangles.length > 20
+  )
+    throw new Error('Invalid watermark.');
+  const count =
+    layer.config.mode === 'single'
+      ? 1
+      : ({ low: 5, medium: 10, high: 20 } as const)[layer.config.density];
+  if (layer.arrangement.algorithmVersion !== 1 || layer.arrangement.rectangles.length !== count)
+    throw new Error('Invalid watermark arrangement.');
+  let image: ImageBitmap | undefined;
+  if (layer.config.kind === 'image') {
+    const asset = layer.assets.find((value) => value.id === layer.config.assetId);
+    if (!asset || layer.config.mode !== 'single') throw new Error('Invalid watermark asset.');
+    image = await createImageBitmap(asset.blob, { imageOrientation: 'none' });
+  }
+  context.save();
+  try {
+    context.globalAlpha = layer.config.opacity;
+    for (const rectangle of layer.arrangement.rectangles) {
+      if (
+        ![rectangle.x, rectangle.y, rectangle.width, rectangle.height].every(Number.isFinite) ||
+        rectangle.x < 0 ||
+        rectangle.y < 0 ||
+        rectangle.width <= 0 ||
+        rectangle.height <= 0 ||
+        rectangle.x + rectangle.width > 1 ||
+        rectangle.y + rectangle.height > 1
+      )
+        throw new Error('Invalid watermark layout.');
+      const x = rectangle.x * plan.displayWidth,
+        y = rectangle.y * plan.displayHeight,
+        width = rectangle.width * plan.displayWidth,
+        height = rectangle.height * plan.displayHeight;
+      if (image) context.drawImage(image, x, y, width, height);
+      else {
+        const fontSize = 0.025 * plan.displayHeight;
+        context.font = `${fontSize}px "Noto Sans TC", sans-serif`;
+        context.fillStyle = '#ffffff';
+        context.textBaseline = 'top';
+        context.fillText(layer.config.text, x, y + Math.max(0, (height - fontSize) / 2), width);
+      }
+    }
+  } finally {
+    context.restore();
+    image?.close();
   }
 }
 
@@ -219,6 +317,7 @@ export async function renderCanvasBlob(
   quality?: number,
 ): Promise<Blob | null> {
   if (typeof createImageBitmap !== 'function') return null;
+  if (plan.overlays.length || plan.watermark?.config.enabled) await ensureEditorFont();
   const bitmap = await createImageBitmap(source, { imageOrientation: 'none' });
   try {
     const preserveRaw = plan.orientationMode === 'preserveRaw';
@@ -240,6 +339,7 @@ export async function renderCanvasBlob(
         plan.outputHeight,
       );
       context.setTransform(...transform);
+      await paintWatermark(context, plan);
       paintOverlays(context, plan.overlays, {
         width: plan.displayWidth,
         height: plan.displayHeight,
@@ -255,6 +355,7 @@ export async function renderCanvasBlob(
       context.setTransform(...transform);
       context.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height);
       context.resetTransform();
+      await paintWatermark(context, plan);
       paintOverlays(context, plan.overlays, {
         width: plan.displayWidth,
         height: plan.displayHeight,

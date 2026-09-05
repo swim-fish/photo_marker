@@ -1,3 +1,4 @@
+import { defaultTemplate } from '../../../src/domain/templates/types';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import 'fake-indexeddb/auto';
 
@@ -187,7 +188,7 @@ describe('DraftRepository', () => {
   });
 
   it('uses a stable database contract', () => {
-    expect(DRAFT_DATABASE_NAME).toBe('photo-marker-drafts');
+    expect(DRAFT_DATABASE_NAME).toBe('photo-marker-v2');
   });
 
   it('exports a typed storage error for callers that need exception handling', () => {
@@ -195,5 +196,99 @@ describe('DraftRepository', () => {
     expect(error).toBeInstanceOf(Error);
     expect(error.code).toBe('persistence-denied');
     expect(error.message).toMatch(/persist/i);
+  });
+});
+
+describe('new-version storage boundary', () => {
+  it('creates all seven stores without reading the old database', async () => {
+    const old = await openDraftDatabase({ name: 'photo-marker-drafts' });
+    await old.put(
+      'sessions',
+      { sessionId: 'old', latestRevision: 1, recordSchemaVersion: 1, updatedAt: '2099' },
+      'old',
+    );
+    const fresh = await openDraftDatabase();
+    expect([...fresh.objectStoreNames]).toEqual([
+      'photos',
+      'preferences',
+      'revisions',
+      'sessions',
+      'sharedIntake',
+      'templates',
+      'watermarkAssets',
+    ]);
+    expect(await fresh.get('sessions', 'old')).toBeUndefined();
+    expect(await old.get('sessions', 'old')).toBeDefined();
+    fresh.close();
+    old.close();
+  });
+});
+
+describe('canonical schema boundary', () => {
+  it('rejects old schemas without invoking a migration or altering the record', async () => {
+    const db = await openDraftDatabase({ name: 'canonical-boundary' });
+    const record = {
+      sessionId,
+      revision: 1,
+      recordSchemaVersion: 0,
+      status: 'committed' as const,
+      snapshot: snapshot(),
+      committedAt: '2026',
+    };
+    await db.put('revisions', record, [sessionId, 1]);
+    const storedBefore = await db.get('revisions', [sessionId, 1]);
+    const migrate = vi.fn();
+    const repository = new DraftRepository({ database: db, migrate });
+    const restored = await repository.restore(sessionId);
+    expect(restored.ok).toBe(false);
+    expect(migrate).not.toHaveBeenCalled();
+    expect(await db.get('revisions', [sessionId, 1])).toEqual(storedBefore);
+    db.close();
+  });
+});
+
+describe('draft asset atomicity', () => {
+  it('aborts missing asset references without replacing a committed revision', async () => {
+    const db = await openDraftDatabase({ name: 'draft-assets' });
+    const repository = new DraftRepository({ database: db });
+    expect((await repository.save(snapshot(1))).ok).toBe(true);
+    const saved = await repository.save({
+      ...snapshot(2),
+      watermarkConfigs: [
+        {
+          enabled: true,
+          kind: 'image',
+          text: '',
+          assetId: 'missing',
+          opacity: 1,
+          mode: 'single',
+          singlePosition: 'center',
+          density: 'low',
+        },
+      ],
+    });
+    expect(saved.ok).toBe(false);
+    expect((await db.get('sessions', sessionId))?.latestRevision).toBe(1);
+    expect(await db.get('revisions', [sessionId, 2])).toBeUndefined();
+    db.close();
+  });
+});
+
+describe('nested draft asset reference', () => {
+  it('rejects a template reference even when the explicit watermark list is empty', async () => {
+    const db = await openDraftDatabase({ name: 'nested-assets' });
+    const repository = new DraftRepository({ database: db });
+    const saved = await repository.save({
+      ...snapshot(),
+      watermarkConfigs: [],
+      editorTemplate: {
+        ...defaultTemplate,
+        watermark: { ...defaultTemplate.watermark, kind: 'image', assetId: 'missing' },
+      },
+    });
+    expect(saved.ok).toBe(false);
+    if (!saved.ok) expect(saved.error.code).toBe('asset-not-found');
+    expect(await db.get('sessions', sessionId)).toBeUndefined();
+    db.close();
   });
 });

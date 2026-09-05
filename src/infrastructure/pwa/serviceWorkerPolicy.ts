@@ -2,7 +2,7 @@ export type PrecacheEntry = Readonly<{ url: string; revision?: string | null }>;
 
 export const SHELL_CACHE_PREFIX = 'photo-marker-shell-';
 const EMAP5_TILE_PATTERN =
-  /^https:\/\/wmts\.nlsc\.gov\.tw\/wmts\/EMAP5\/default\/GoogleMapsCompatible\/\d+\/\d+\/\d+$/;
+  /^https:\/\/wmts\.nlsc\.gov\.tw\/wmts\/(?:EMAP5|PHOTO2|B5000)\/default\/GoogleMapsCompatible\/(\d+)\/(\d+)\/(\d+)$/;
 
 function stableHash(value: string): string {
   let hash = 0x811c9dc5;
@@ -97,5 +97,8 @@ export function isRuntimeRequestAllowed(
       url.pathname.startsWith('/icons/')
     );
   }
-  return mapPreviewOpenWithConsent && EMAP5_TILE_PATTERN.test(url.href);
+  const match = EMAP5_TILE_PATTERN.exec(url.href);
+  if (!mapPreviewOpenWithConsent || !match) return false;
+  const [z, y, x] = match.slice(1).map(Number);
+  return z >= 0 && z <= 18 && x >= 0 && y >= 0 && x < 2 ** z && y < 2 ** z;
 }

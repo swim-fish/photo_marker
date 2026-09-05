@@ -6,7 +6,10 @@ import { gzipSync } from 'node:zlib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { build } from 'vite';
 
-import { isPrecacheCandidate } from '../../../src/infrastructure/pwa/serviceWorkerPolicy';
+import {
+  isPrecacheCandidate,
+  requiredShellUrls,
+} from '../../../src/infrastructure/pwa/serviceWorkerPolicy';
 
 let outputDirectory = '';
 let indexHtml = '';
@@ -68,8 +71,11 @@ describe('production local-only policy', () => {
   });
 
   it('excludes map tiles and user content from the service-worker shell', () => {
-    expect(serviceWorker).not.toContain('GoogleMapsCompatible');
-    expect(serviceWorker).not.toContain('wmts.nlsc.gov.tw');
+    expect(
+      requiredShellUrls([
+        { url: 'https://wmts.nlsc.gov.tw/wmts/EMAP5/default/GoogleMapsCompatible/0/0/0' },
+      ]),
+    ).toEqual([]);
     expect(isPrecacheCandidate('/photos/private-source.png')).toBe(false);
     expect(isPrecacheCandidate('/drafts/private-session')).toBe(false);
     expect(isPrecacheCandidate('https://wmts.nlsc.gov.tw/tile.jpg')).toBe(false);
@@ -79,7 +85,8 @@ describe('production local-only policy', () => {
     const notices = await readFile(resolve(process.cwd(), 'THIRD_PARTY_NOTICES.md'), 'utf8');
     expect(notices).toContain('Noto Sans Traditional Chinese');
     expect(notices).toContain('Leaflet 1.9.4');
-    expect(notices).toContain('NLSC EMAP5 external map service');
+    expect(notices).toContain('NLSC external map services');
+    for (const layer of ['EMAP5', 'PHOTO2', 'B5000']) expect(notices).toContain(layer);
     expect(notices).toContain('Vendored coordinate core and reference vectors');
   });
 });

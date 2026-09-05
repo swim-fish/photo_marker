@@ -28,9 +28,10 @@ export function requestCurrentLocation(
     geolocation.getCurrentPosition(
       (position) => {
         if (
-          !Number.isFinite(position.coords.accuracy) ||
-          position.coords.accuracy < 0 ||
-          position.coords.accuracy > options.maxAccuracyMeters
+          position.coords.accuracy != null &&
+          (!Number.isFinite(position.coords.accuracy) ||
+            position.coords.accuracy < 0 ||
+            position.coords.accuracy > options.maxAccuracyMeters)
         ) {
           resolve(failure('accuracy-insufficient'));
           return;

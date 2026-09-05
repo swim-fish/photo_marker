@@ -3,7 +3,8 @@ export type Wgs84Coordinate = Readonly<{
   longitude: number;
 }>;
 
-export type CoordinateProvenance = 'CAPTURE_METADATA' | 'CURRENT_GPS' | 'MANUAL_INPUT';
+export type CoordinateProvenance =
+  'CAPTURE_METADATA' | 'CURRENT_GPS' | 'MANUAL_INPUT' | 'MAP_SELECTION';
 
 export type CoordinateInputFormat =
   'WGS84_DD' | 'WGS84_DMS' | 'TWD97_TM2' | 'TWD67_TM2' | 'MGRS' | 'TAIPOWER' | 'DEVICE_WGS84';

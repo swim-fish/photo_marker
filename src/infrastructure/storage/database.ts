@@ -1,9 +1,11 @@
+import type { AnnotationTemplate, EditorPreferences } from '../../domain/templates/types';
+import type { WatermarkAsset } from '../../domain/watermarks/types';
 import { deleteDB, openDB, type DBSchema, type IDBPDatabase } from 'idb';
 
 import { CURRENT_RECORD_SCHEMA_VERSION, type MigratedDraftRecord } from './migrations';
 import type { DraftSnapshot, PersistedDraftSnapshot } from './draftRepository';
 
-export const DRAFT_DATABASE_NAME = 'photo-marker-drafts';
+export const DRAFT_DATABASE_NAME = 'photo-marker-v2';
 export const DRAFT_DATABASE_VERSION = 1;
 
 export const DRAFT_STORE_NAMES = {
@@ -52,6 +54,9 @@ export type SharedIntakeFileRecord = Readonly<{
 }>;
 
 export interface DraftDatabaseSchema extends DBSchema {
+  preferences: { key: string; value: EditorPreferences };
+  templates: { key: string; value: AnnotationTemplate };
+  watermarkAssets: { key: string; value: WatermarkAsset };
   sessions: {
     key: string;
     value: DraftSessionRecord;
@@ -112,6 +117,9 @@ export async function openDraftDatabase(
   const databaseVersion = options.databaseVersion ?? DRAFT_DATABASE_VERSION;
   return openDB<DraftDatabaseSchema>(name, databaseVersion, {
     upgrade(database) {
+      for (const store of ['preferences', 'templates', 'watermarkAssets'] as const) {
+        if (!database.objectStoreNames.contains(store)) database.createObjectStore(store);
+      }
       if (!database.objectStoreNames.contains(DRAFT_STORE_NAMES.sessions)) {
         database.createObjectStore(DRAFT_STORE_NAMES.sessions);
       }

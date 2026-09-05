@@ -1,9 +1,9 @@
 # ADR 0002: Redesigned Editor State and Local Presets
 
-- **Status**: Proposed
+- **Status**: Accepted for implementation; external release gates pending
 - **Date**: 2026-09-05
 - **Related specification**: specs/002-redesign-pwa-editor/spec.md
-- **Relationship**: On implementation acceptance, supersedes conflicting ADR 0001 navigation,
+- **Relationship**: Supersedes conflicting ADR 0001 navigation,
   map and persistence contracts for the new version. The old ADR remains historical evidence.
 
 ## Context
@@ -52,4 +52,16 @@ removed the old-client premise. Validate the final unified database with transac
 source/revision recovery, shared-asset and cleanup-isolation tests. Validate EXIF orientations,
 alpha pixels, stable watermark restore, no-egress/consent, provider availability and performance.
 Users cannot resume old-version drafts in the new application. Fresh consent is required for maps.
-This ADR is proposed design; application implementation and release evidence are still pending.
+The working tree implements this decision. Automated storage, renderer, no-egress, recovery and
+browser evidence is recorded in `specs/002-redesign-pwa-editor/validation.md`; physical-device,
+provider and usability acceptance remains pending.
+
+Rendering uses a bounded preview surface while preserving original export size. A packaged font is
+loaded in both worker and fallback contexts. Shared PNG IDs are immutable: new bytes require a new
+ID. Stored watermark arrangements are reused only for the same photo, algorithm and fingerprint.
+
+Service-worker authorization is a per-request query to the live requesting page, after exact URL
+and matrix-bound checks. A worker restart therefore cannot lose a durable authorization lease, and
+closing the map synchronously changes the page response to denied. There is no tile cache, global
+permission flag, or long-lived stored network lease. Production tests restart the worker and verify
+closed/open/restarted/revoked request outcomes.

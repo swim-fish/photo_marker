@@ -1,5 +1,10 @@
 # ADR 0001: Offline Photo Annotation Architecture
 
+> Partially superseded by [ADR 0002](0002-redesigned-editor-state-and-presets.md) for active navigation,
+> map selection and new-version persistence. Local-only processing, source immutability and the
+> existing metadata preservation boundary still apply.
+
+
 - **Status**: Accepted
 - **Date**: 2026-08-16
 - **Decision owners**: Photo Marker project

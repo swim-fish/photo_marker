@@ -1,5 +1,10 @@
 # Photo Annotation Workspace
 
+> Historical interface: the active new-version editor is documented in
+> [Redesigned Photo Editor](redesigned-photo-editor.md). Old navigation and batch controls below
+> are no longer mounted. Old storage is not imported or deleted.
+
+
 ## Purpose and scope
 
 This document defines the responsive layout, interaction, accessibility, and state behavior for the

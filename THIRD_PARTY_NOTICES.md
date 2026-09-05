@@ -58,20 +58,21 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Upstream license: https://github.com/Leaflet/Leaflet/blob/v1.9.4/LICENSE
 
-## NLSC EMAP5 external map service
+## NLSC external map services
 
 The optional online preview requests JPEG tiles from the National Land Surveying and Mapping Center
-(NLSC) EMAP5 WMTS layer only after explicit user consent. The permanent in-application attribution
-is **Data source: National Land Surveying and Mapping Center (NLSC), Taiwan**.
+(NLSC) EMAP5, PHOTO2 and B5000 WMTS layers only after explicit user consent. The permanent in-application attribution
+is **圖資來源：內政部國土測繪中心 NLSC**.
 
 - Service page: https://maps.nlsc.gov.tw/S09SOA/
-- Tile endpoint: `https://wmts.nlsc.gov.tw/wmts/EMAP5/default/GoogleMapsCompatible/{z}/{y}/{x}`
+- Tile endpoint: `https://wmts.nlsc.gov.tw/wmts/{layer}/default/GoogleMapsCompatible/{z}/{y}/{x}`
+- Configured layers: EMAP5 (standard), PHOTO2 (orthophoto imagery), B5000 (terrain); common zoom 0–18.
 - Service boundary: EMAP5 is distinct from `EMAP5_OPENDATA`; this project does not claim the latter
   layer's open-data license for EMAP5.
 - Usage boundary: the application does not bulk-download, prefetch, or persist map tiles and does
   not add EMAP5 to the service-worker cache.
 
-Use of EMAP5 remains subject to the NLSC service terms in effect when the service is accessed.
+Use of these layers remains subject to the NLSC service terms in effect when the service is accessed.
 
 ## Vendored coordinate core and reference vectors
 
