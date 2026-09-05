@@ -29,6 +29,21 @@ Device location requires browser permission. Map requests are sent to the chosen
 map provider; photos are not uploaded. Clearing browser site data removes locally
 stored drafts and templates. The app version appears at the bottom of each page.
 
+### Android photo locations
+
+Android photo pickers or photo providers may remove GPS metadata before handing
+the file to a website. Android uses a general file picker by default in this app;
+you can also choose **從檔案選取原圖** and browse to the original JPEG or PNG in
+**DCIM/Camera**. If offered, enable **Include location** in the system picker.
+Whether GPS is retained depends on the browser and file provider. A location
+shown in a gallery is not necessarily embedded in the original file.
+
+If the selected file still has no GPS metadata, use the map or manually enter the
+photo location. Device location describes where you are now, not necessarily
+where the photo was taken. The app cannot restore metadata removed by Android.
+
+Reference: [Android media location access](https://developer.android.com/training/data-storage/shared/media#media-location-permission).
+
 ## Development
 
 Requires Node.js 22.12+ and npm.

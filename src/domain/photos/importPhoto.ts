@@ -20,7 +20,10 @@ export async function importPhoto(
   if (file.size < 1 || file.size > MAX_BYTES_PER_PHOTO) return failure('over-limit');
   const metadata = await readMetadata(file);
   if (!metadata.ok) return failure(metadata.error.code as ImportPhotoFailure);
-  if (file.type !== metadata.value.mime) return failure('unsupported-format');
+  // Document providers may omit MIME or return a generic binary type.
+  // Only accept those fallbacks after validating the actual JPEG/PNG bytes.
+  if (file.type && file.type !== 'application/octet-stream' && file.type !== metadata.value.mime)
+    return failure('unsupported-format');
 
   const limit = validatePhotoLimits({
     bytes: file.size,

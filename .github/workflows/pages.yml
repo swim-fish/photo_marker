@@ -47,17 +47,20 @@ jobs:
         with:
           ref: ${{ github.workflow_sha }}
           path: .deployment-checks
-          sparse-checkout: tests/e2e/pages-release.spec.ts
+          sparse-checkout: |
+            tests/e2e/pages-release.spec.ts
+            tests/e2e/android-photo-gps.spec.ts
           sparse-checkout-cone-mode: false
       - name: Verify Pages build and offline startup
         run: |
           cp .deployment-checks/tests/e2e/pages-release.spec.ts tests/e2e/pages-release.spec.ts
+          cp .deployment-checks/tests/e2e/android-photo-gps.spec.ts tests/e2e/android-photo-gps.spec.ts
           npm run preview -- --host 127.0.0.1 --port 4176 --base /photo_marker/ &
           for attempt in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:4176/photo_marker/ > /dev/null; then break; fi
             sleep 1
           done
-          npx playwright test tests/e2e/pages-release.spec.ts
+          npx playwright test tests/e2e/pages-release.spec.ts tests/e2e/android-photo-gps.spec.ts
         env:
           PAGES_RELEASE_TEST: '1'
           PLAYWRIGHT_BASE_URL: http://127.0.0.1:4176

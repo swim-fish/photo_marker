@@ -117,6 +117,8 @@
   let locationCandidate = $state<CoordinateRecord | null>(null);
   let locationRequest = 0;
   let selectedFiles = $state<HTMLInputElement>();
+  let originalFiles = $state<HTMLInputElement>();
+  let androidFilePicker = $state(false);
   let importGeneration = 0;
   let renderGeneration = 0;
   let saveTail: Promise<void> = Promise.resolve();
@@ -747,6 +749,7 @@
     };
   });
   onMount(() => {
+    androidFilePicker = /Android/i.test(navigator.userAgent);
     let mounted = true;
     mapConsented = readMapConsent(localStorage).status === 'granted';
     online = navigator.onLine;
@@ -806,9 +809,25 @@
     bind:this={selectedFiles}
     aria-label="選取照片"
     type="file"
-    accept="image/jpeg,image/png"
+    accept={androidFilePicker ? undefined : 'image/jpeg,image/png'}
     disabled={loading || exporting}
-    onchange={(event) => handleFile(event.currentTarget.files?.[0])}
+    onchange={(event) => {
+      const file = event.currentTarget.files?.[0];
+      event.currentTarget.value = '';
+      void handleFile(file);
+    }}
+  />
+  <input
+    class="file-input"
+    bind:this={originalFiles}
+    aria-label="選取原始照片檔案"
+    type="file"
+    disabled={loading || exporting}
+    onchange={(event) => {
+      const file = event.currentTarget.files?.[0];
+      event.currentTarget.value = '';
+      void handleFile(file);
+    }}
   />
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if loading}<p role="status">正在讀取照片…</p>
@@ -826,6 +845,13 @@
       <p>讀取照片 GPS，加上座標與文字。<br />照片留在此裝置，無須上傳。</p>
     </section>
     <Button disabled={loading} onclick={() => selectedFiles?.click()}>選取手機照片</Button>
+    <Button variant="secondary" disabled={loading} onclick={() => originalFiles?.click()}
+      >從檔案選取原圖</Button
+    >
+    {#if androidFilePicker}<p class="muted">
+        建議從「檔案」中的 DCIM／Camera 選取原圖；相簿選取器可能移除
+        GPS。若系統提供「包含位置」，請勾選。
+      </p>{/if}
     <p class="muted">支援 JPEG、PNG · 保留原始照片</p>
     {#if recovery}<section class="panel">
         <h2>繼續上次的記錄</h2>
@@ -851,7 +877,7 @@
       </div>{/if}
     {#if view === 'editor'}
       <section class="panel coordinate-summary">
-        <strong>{settings.coordinate ? '已取得照片位置' : '這張照片沒有 GPS'}</strong>
+        <strong>{settings.coordinate ? '已取得照片位置' : '未讀取到照片 GPS'}</strong>
         <CoordinateReadout
           text={coordinateSummary()}
           format={settings.template.coordinateFormat}
@@ -861,6 +887,17 @@
         <small
           >{settings.coordinate ? `來源：${sourceLabel(settings.coordinate)}` : '未設定座標'}</small
         >
+        {#if !settings.coordinate}
+          <p class="muted">
+            選取器可能移除位置資訊。請從「檔案」中的 DCIM／Camera 選取 JPEG 或 PNG
+            原圖，也可以手動設定位置。
+          </p>
+          <Button
+            variant="secondary"
+            disabled={loading || exporting}
+            onclick={() => originalFiles?.click()}>從檔案選取原圖</Button
+          >
+        {/if}
       </section>
       <div class="tools">
         <Button variant="secondary" disabled={loading} onclick={() => openSettings('coordinate')}

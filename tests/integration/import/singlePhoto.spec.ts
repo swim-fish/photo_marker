@@ -9,6 +9,35 @@ async function sha256(blob: Blob): Promise<string> {
 }
 
 describe('single-photo import pipeline', () => {
+  it.each(['', 'application/octet-stream'])(
+    'imports verified image bytes with provider MIME %j',
+    async (type) => {
+      for (const name of ['orientation-1.jpg', 'sample.png'] as const) {
+        const source = await createPhotoFixtureFile(name);
+        const file = new File([await source.arrayBuffer()], name, { type });
+        const result = await importPhoto(file, {
+          id: 'provider-photo',
+          sessionId: 'provider-session',
+        });
+        expect(result.ok).toBe(true);
+        if (!result.ok) continue;
+        expect(result.value.sourceMime).toBe(source.type);
+        expect(await sha256(result.value.sourceBlob)).toBe(await sha256(file));
+      }
+    },
+  );
+
+  it.each(['', 'application/octet-stream'])(
+    'rejects non-image bytes with provider MIME %j',
+    async (type) => {
+      const result = await importPhoto(new File(['not a photo'], 'fake.jpg', { type }), {
+        id: 'invalid-provider-photo',
+        sessionId: 'provider-session',
+      });
+      expect(result).toMatchObject({ ok: false, error: { code: 'unsupported-format' } });
+    },
+  );
+
   it('imports valid JPEG and PNG files through one source contract', async () => {
     const jpeg = await createPhotoFixtureFile('orientation-6.jpg');
     const png = await createPhotoFixtureFile('sample.png');
